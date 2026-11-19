@@ -1,0 +1,3 @@
+import {NextResponse} from "next/server";import {prisma} from "@/lib/prisma";
+export const runtime="nodejs";
+export async function POST(req:Request){const b=await req.json().catch(()=>null);if(!b||typeof b.repertoireId!=="string"||typeof b.name!=="string"||!b.name.trim()||!['ponziani','italian','caro-kann','custom'].includes(b.category))return NextResponse.json({error:"Enter a chapter name and category."},{status:400});try{return NextResponse.json({chapter:await prisma.openingChapter.create({data:{repertoireId:b.repertoireId,name:b.name.trim(),category:b.category}})})}catch{return NextResponse.json({error:"Could not create chapter."},{status:400})}}

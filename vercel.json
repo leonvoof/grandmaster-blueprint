@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "GMB_DB_PROVIDER=postgresql npm run build"
+}

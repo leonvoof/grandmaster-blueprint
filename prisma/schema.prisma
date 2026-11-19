@@ -1,0 +1,206 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model PlayerProfile {
+  id                String   @id @default("local-player")
+  displayName       String
+  currentRating     Int      @default(1800)
+  ratingPlatform    String   @default("Lichess Classical")
+  targetTitle       String   @default("Candidate Master")
+  targetRating      Int      @default(2200)
+  weeklyStudyHours  Int      @default(10)
+  preferredSide     String   @default("Both")
+  onboardingComplete Boolean @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model ChessGame {
+  id String @id @default(cuid())
+  white String
+  black String
+  date String?
+  result String?
+  opening String?
+  pgn String
+  initialFen String?
+  fingerprint String? @unique
+  lichessId String? @unique
+  lichessSpeed String?
+  lichessClock Json?
+  createdAt DateTime @default(now())
+  analyses GameAnalysis[]
+}
+
+model GameAnalysis {
+  id String @id @default(cuid())
+  gameId String
+  game ChessGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  fen String
+  ply Int
+  engine String
+  settings String
+  depth Int
+  scoreType String?
+  scoreValue Int?
+  bestMove String?
+  variation String
+  terminal String?
+  note String?
+  updatedAt DateTime @updatedAt
+  reviewEvents ReviewEvent[]
+  reflection MistakeReflection?
+  @@unique([gameId, fen, engine, settings, depth])
+  @@index([gameId])
+}
+
+model ReviewEvent {
+  id             String       @id @default(cuid())
+  gameAnalysisId String
+  analysis       GameAnalysis @relation(fields: [gameAnalysisId], references: [id], onDelete: Cascade)
+  kind           String
+  submittedSan   String?
+  matchedBest    Boolean?
+  createdAt      DateTime     @default(now())
+  @@index([gameAnalysisId, createdAt])
+}
+
+model MistakeReflection {
+  id             String       @id @default(cuid())
+  gameAnalysisId String       @unique
+  analysis       GameAnalysis @relation(fields: [gameAnalysisId], references: [id], onDelete: Cascade)
+  thinking       String       @default("")
+  overlooked     String       @default("")
+  variations     String       @default("")
+  learned        String       @default("")
+  recognition    String       @default("")
+  updatedAt      DateTime     @updatedAt
+}
+
+model TacticsPuzzle {
+  id             String @id
+  fen            String
+  solution       String
+  rating         Int
+  themes         String
+  moveCount      Int
+  source         String
+  license        String
+  importedAt     DateTime @default(now())
+  attempts       TacticsAttempt[]
+  @@index([rating])
+}
+
+model TacticsAttempt {
+  id                  String @id @default(cuid())
+  puzzleId            String
+  puzzle              TacticsPuzzle @relation(fields: [puzzleId], references: [id], onDelete: Cascade)
+  idempotencyKey      String @unique
+  submittedMoves      String
+  firstAttemptCorrect Boolean
+  solvingTimeMs       Int
+  hintsUsed           Int @default(0)
+  solutionRevealed    Boolean @default(false)
+  completed           Boolean
+  createdAt           DateTime @default(now())
+  @@index([puzzleId, createdAt])
+}
+
+model LichessSettings {
+  id             String @id @default("local-player")
+  username       String
+  classical      Int?
+  rapid          Int?
+  blitz          Int?
+}
+
+model OpeningRepertoire {
+  id String @id @default(cuid())
+  name String
+  side String
+  chapters OpeningChapter[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OpeningChapter {
+  id String @id @default(cuid())
+  repertoireId String
+  repertoire OpeningRepertoire @relation(fields: [repertoireId], references: [id], onDelete: Cascade)
+  name String
+  category String @default("custom")
+  lines OpeningLine[]
+  notes OpeningNote[]
+  createdAt DateTime @default(now())
+  @@index([repertoireId])
+}
+
+model OpeningLine {
+  id String @id @default(cuid())
+  chapterId String
+  chapter OpeningChapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  name String
+  pgn String
+  preferred Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([chapterId])
+}
+
+model OpeningNote {
+  id String @id @default(cuid())
+  chapterId String
+  chapter OpeningChapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  fen String
+  text String
+  updatedAt DateTime @updatedAt
+  @@unique([chapterId, fen])
+}
+
+// These records intentionally keep repertoire/chapter IDs as scalar references
+// instead of cascading relations. Edited/deleted opening lines must not erase
+// a player's review history; applicability is reconciled against the live tree.
+model OpeningTrainingPosition {
+  id                    String                   @id @default(cuid())
+  identity              String                   @unique
+  repertoireId          String
+  chapterId             String
+  trainingColor         String
+  startingFen           String
+  fen                   String
+  contextPath           String
+  expectedMoves         String
+  applicable            Boolean                  @default(true)
+  lastReviewAt          DateTime?
+  nextReviewAt          DateTime?
+  intervalDays          Float                    @default(0)
+  repetition            Int                      @default(0)
+  easeFactor            Float                    @default(2.5)
+  recentSuccessHistory  String                   @default("[]")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  reviews               OpeningTrainingReview[]
+  @@index([repertoireId, chapterId, trainingColor, applicable])
+  @@index([repertoireId, chapterId, trainingColor, nextReviewAt])
+}
+
+model OpeningTrainingReview {
+  id                  String                  @id @default(cuid())
+  positionId          String
+  position            OpeningTrainingPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  idempotencyKey      String                  @unique
+  submittedMove       String?
+  firstAttemptCorrect Boolean
+  incorrectAttempts   Int                     @default(0)
+  hintsUsed           Int                     @default(0)
+  answersRevealed     Int                     @default(0)
+  grade               Int
+  reviewedAt          DateTime                @default(now())
+  @@index([positionId, reviewedAt])
+}

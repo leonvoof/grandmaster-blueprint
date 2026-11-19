@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { registerHooks } from "node:module";
+import { withIsolatedDb } from "./isolated-db.mjs";
+registerHooks({resolve(specifier,context,nextResolve){return specifier.startsWith("@/")?nextResolve(new URL(`../${specifier.slice(2)}.ts`,import.meta.url).href,context):nextResolve(specifier,context)}});
+const {lineMoves,linePgn,positionForMoves,canonicalLine,lineIdentity}=await import("../lib/opening-tree.ts");
+test("legal lines navigate correctly, branch at a position, deduplicate exact branches, and preserve edits",()=>withIsolatedDb(async db=>{
+ const repertoire=await db.openingRepertoire.create({data:{name:"Test",side:"White"}});
+ const chapter=await db.openingChapter.create({data:{repertoireId:repertoire.id,name:"Test chapter",category:"custom"}});
+ const main=linePgn(["e4","e5","Nf3"]), alternative=linePgn(["e4","c5","Nf3"]);
+ assert.deepEqual(lineMoves(main),["e4","e5","Nf3"]);assert.notEqual(positionForMoves(lineMoves(main),2),positionForMoves(lineMoves(alternative),2));
+ const customStart="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 5";const sameSansCustom=linePgn(["e4","e5","Nf3"],customStart);assert.equal(canonicalLine(main),canonicalLine(sameSansCustom));assert.notEqual(lineIdentity(main),lineIdentity(sameSansCustom));
+ assert.throws(()=>linePgn(["e4","e4"]));
+ const first=await db.openingLine.create({data:{chapterId:chapter.id,name:"Main",pgn:main}});
+ const second=await db.openingLine.create({data:{chapterId:chapter.id,name:"Sicilian branch",pgn:alternative}});
+ assert.notEqual(canonicalLine(first.pgn),canonicalLine(second.pgn));
+ await db.openingLine.update({where:{id:second.id},data:{name:"Edited branch",pgn:linePgn(["e4","c5","Nf3","d6"])}});
+ const noteFen=positionForMoves(["e4","e5"],2);await db.openingNote.create({data:{chapterId:chapter.id,fen:noteFen,text:"central plans"}});
+ const reopened=await db.openingLine.findMany({where:{chapterId:chapter.id},orderBy:{name:"asc"}});assert.equal(reopened.length,2);assert.equal(reopened.find(line=>line.id===first.id).pgn,main);assert.deepEqual(lineMoves(reopened.find(line=>line.id===second.id).pgn),["e4","c5","Nf3","d6"]);assert.equal((await db.openingNote.findUnique({where:{chapterId_fen:{chapterId:chapter.id,fen:noteFen}}})).text,"central plans");await db.openingLine.delete({where:{id:second.id}});assert.equal((await db.openingLine.count({where:{chapterId:chapter.id}})),1);
+}));

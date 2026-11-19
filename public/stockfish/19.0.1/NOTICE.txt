@@ -1,0 +1,11 @@
+Grandmaster Blueprint serves the unmodified Stockfish.js 19.0.1 Lite single-threaded WebAssembly engine.
+Copyright © 2026 Chess.com, LLC. Based on Stockfish by T. Romstad, M. Costalba,
+J. Kiiski, G. Linscott and other contributors. Lite network by Chris Bao (sscg13).
+
+The distributed engine is licensed under GNU GPL v3. See Copying.txt and AUTHORS.txt.
+The worker JavaScript retains the original copyright banner.
+
+Exact distribution and corresponding source, including the Emscripten build scripts:
+https://github.com/nmrugg/stockfish.js/releases/tag/v19.0.1
+https://github.com/nmrugg/stockfish.js/tree/v19.0.1
+https://github.com/nmrugg/stockfish.js/archive/refs/tags/v19.0.1.tar.gz

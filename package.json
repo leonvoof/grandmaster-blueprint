@@ -1,0 +1,45 @@
+{
+  "name": "grandmaster-blueprint",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "predev": "node scripts/prepare-stockfish.mjs && node scripts/ensure-db.mjs && prisma generate --schema prisma/schema.prisma && prisma migrate deploy --schema prisma/schema.prisma",
+    "build": "next build",
+    "prebuild": "node scripts/prepare-stockfish.mjs && node scripts/generate-prisma.mjs",
+    "start": "next start",
+    "lint": "eslint .",
+    "db:push": "prisma migrate deploy --schema prisma/schema.prisma",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "db:studio": "prisma studio --schema prisma/schema.prisma",
+    "db:migrate:postgres": "prisma migrate deploy --schema prisma/postgresql/schema.prisma",
+    "test:postgres": "node --experimental-strip-types --test tests/postgresql/*.test.mjs",
+    "db:transfer": "node scripts/transfer-sqlite.mjs",
+    "test:transfer": "node --experimental-strip-types --test tests/postgresql/transfer.test.mjs"
+  },
+  "dependencies": {
+    "@mliebelt/pgn-parser": "^1.4.19",
+    "@prisma/client": "^6.19.0",
+    "bcryptjs": "^3.0.3",
+    "chess.js": "^1.4.0",
+    "lucide-react": "^0.468.0",
+    "next": "^15.5.6",
+    "next-auth": "^5.0.0-beta.32",
+    "react": "^19.1.1",
+    "react-chessboard": "^4.7.3",
+    "react-dom": "^19.1.1",
+    "stockfish": "19.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.17",
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "^15.5.6",
+    "pg": "^8.23.1",
+    "prisma": "^6.19.0",
+    "tailwindcss": "^4.1.17",
+    "typescript": "^5.9.3"
+  }
+}
