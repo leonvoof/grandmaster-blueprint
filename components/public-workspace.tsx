@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Chess, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import { GameViewer } from "@/components/game-viewer";
@@ -8,7 +8,7 @@ import { exportBrowserReviews, restoreBrowserReviews } from "@/lib/browser-game-
 import { buildTrainingTree, playAnswer, startExercise, type Exercise } from "@/lib/opening-trainer";
 import { lichessCooldownKey, lichessImportLimits, LichessImportError, mergeLichessGames, requestPublicLichessGames, withSingleLichessImport, type LichessTimeControl } from "@/lib/public-lichess";
 import { decodeProgress, maxBackupBytes, puzzles, readProgress, saveProgress, validatedPgn, type PublicProgress, type PublicGame } from "@/lib/public-progress";
-import { parsePuzzleRow } from "@/lib/tactics";
+import { parseNextPuzzle, parsePuzzleRow, type PuzzleInput } from "@/lib/tactics";
 
 
 const panel = "rounded-2xl border border-white/10 bg-[#11131b] p-4 sm:p-6";
@@ -286,29 +286,57 @@ function PgnWorkspace({ training, lichessImport, progress, update, restoreVersio
 
 function Tactics({ progress, update }: { progress: PublicProgress | null; update: Update }) {
   const [selected, setSelected] = useState(0);
-  const puzzle = puzzles[selected];
-  return <div className={panel}>
-    <label className="text-sm">Choose a puzzle <select className="field" value={selected} onChange={(event) => setSelected(Number(event.target.value))}>
-      {puzzles.map(({ id, rating }, index) => <option key={id} value={index}>#{id} · {rating}</option>)}
-    </select></label>
-    <Puzzle key={puzzle.id} row={puzzle} solved={() => update((data) => ({ ...data, solves: { ...data.solves, [puzzle.id]: (data.solves[puzzle.id] ?? 0) + 1 } }))}>
-      <p className="my-3 text-sm text-gray-400">Completed in this browser: {progress?.solves[puzzle.id] ?? 0}. <a className="underline" href="https://database.lichess.org/#puzzles">Lichess Puzzle Database · CC0</a></p>
+  const [active, setActive] = useState<PuzzleInput>(puzzles[0]);
+  const [request, setRequest] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
+  const recentIds = useRef<string[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setFetchError("");
+    void (async () => {
+      try {
+        let next: PuzzleInput | null = null;
+        for (let tries = 0; tries < 3 && !next; tries++) {
+          const response = await fetch("https://lichess.org/api/puzzle/next", { credentials: "omit", headers: { Accept: "application/json" }, signal: controller.signal });
+          if (!response.ok) throw new Error(response.status === 429 ? "Lichess is temporarily rate limiting puzzle requests." : `Puzzle request failed (${response.status}).`);
+          const candidate = parseNextPuzzle(await response.json());
+          if (!recentIds.current.includes(candidate.id) || tries === 2) next = candidate;
+        }
+        if (!controller.signal.aborted && next) { setActive(next); recentIds.current = [...recentIds.current.filter((id) => id !== next!.id), next!.id].slice(-8); setSelected(-1); }
+      } catch (error) {
+        if (!controller.signal.aborted) setFetchError(error instanceof Error ? error.message : "Could not load a Lichess puzzle.");
+      } finally { if (!controller.signal.aborted) setLoading(false); }
+    })();
+    return () => controller.abort();
+  }, [request]);
+  const fallback = selected >= 0 ? puzzles[selected] : null;
+  const puzzle = fallback ?? active;
+  return <div className={`${panel} knightforge-public-tactics`}>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#70d6b8]">Tactics practice</p><h2 className="mt-1 text-xl font-semibold">Find the best move</h2></div><button className="knightforge-import-action btn min-h-11 px-4" onClick={() => { setSelected(-1); setRequest((n) => n + 1); }}>Next Puzzle <span aria-hidden="true">→</span></button></div>
+    <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-400"><span>#{puzzle.id} · {puzzle.rating}</span>{loading && <span role="status" className="text-[#8bdac1]">Loading next puzzle…</span>}<a className="underline decoration-white/20 underline-offset-4 hover:text-[#8bdac1]" href="https://database.lichess.org/#puzzles">Lichess Puzzle Database · CC0</a></div>
+    {fetchError && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/15 bg-amber-200/[.04] p-3 text-sm text-amber-100/80" role="status"><span>{fetchError} The offline puzzle set remains available.</span><button className="btn" onClick={() => setRequest((n) => n + 1)}>Retry</button></div>}
+    <Puzzle key={`${puzzle.id}:${selected}`} row={puzzle} solved={() => update((data) => ({ ...data, solves: { ...data.solves, [puzzle.id]: (data.solves[puzzle.id] ?? 0) + 1 } }))}>
+      <p className="my-3 text-sm text-gray-400">Completed in this browser: {progress?.solves[puzzle.id] ?? 0}.</p>
     </Puzzle>
+    {selected >= 0 && <label className="mt-4 block text-sm">Offline puzzle fallback <select className="field ml-2" value={selected} onChange={(event) => setSelected(Number(event.target.value))}>{puzzles.map(({ id, rating }, index) => <option key={id} value={index}>#{id} · {rating}</option>)}</select></label>}
   </div>;
 }
 
-function Puzzle({ row, solved, children }: { row: typeof puzzles[number]; solved: () => void; children: ReactNode }) {
+function Puzzle({ row, solved, children }: { row: PuzzleInput; solved: () => void; children: ReactNode }) {
   const puzzle = parsePuzzleRow(row);
-  const line = row.moves.split(" ").slice(1);
+  const line = row.setupApplied ? row.moves.trim().split(/\s+/) : row.moves.split(" ").slice(1);
   const [fen, setFen] = useState(puzzle.fen);
   const [index, setIndex] = useState(0);
   const [feedback, setFeedback] = useState("");
+  const [hint, setHint] = useState(false);
+  const [revealed, setRevealed] = useState(false);
   function move(input: Move) {
-    if (index >= line.length) return false;
+    if (index >= line.length || revealed) return false;
     const board = new Chess(fen);
     try { board.move(input); } catch { return false; }
     if (input.from + input.to + (input.promotion ?? "") !== line[index]) {
-      setFeedback("Try another move.");
+      setFeedback("Incorrect. Try another legal move.");
       return false;
     }
     const reply = line[index + 1];
@@ -321,9 +349,11 @@ function Puzzle({ row, solved, children }: { row: typeof puzzles[number]; solved
     return true;
   }
   return <>{children}<Board fen={fen} black={new Chess(puzzle.fen).turn() === "b"} move={move} />
-    <div className="mt-3 flex flex-wrap items-center gap-3">
-      <button className="btn" onClick={() => { setIndex(0); setFen(puzzle.fen); setFeedback(""); }}>Restart puzzle</button>
-      <p role="status" className="text-sm text-violet-200">{feedback}</p>
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <button className="btn" onClick={() => { setHint(true); setFeedback("Hint: look for a forcing move by the highlighted piece."); }}>Hint</button>
+      <button className="btn" onClick={() => { setRevealed(true); setFeedback(`Solution: ${line.join(" ")}`); }}>Show solution</button>
+      <p role="status" className="text-sm text-[#8bdac1]">{feedback}</p>
+      {hint && !feedback && <span className="text-xs text-gray-400">Find a forcing move.</span>}
     </div>
   </>;
 }
