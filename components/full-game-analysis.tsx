@@ -11,7 +11,7 @@ import { findCriticalMoves } from "@/lib/evaluation-review";
 import { MistakeReviewSession } from "@/components/mistake-review-session";
 import { StockfishAnalysis } from "@/components/stockfish-analysis";
 import { moverAtPosition, moveNumberAtPosition } from "@/lib/game-viewer-controls";
-import { classifyGameMoves, summarizeClassifiedMoves, type MoveClassification } from "@/lib/game-review-classification";
+import { classifyGameMoves, summarizeClassifiedMoves, classifiedMoveCount, type MoveClassification } from "@/lib/game-review-classification";
 
 type Position = GamePosition;
 import { readBrowserAnalyses, saveBrowserAnalysis, type SavedAnalysis as Saved } from "@/lib/browser-game-review";
@@ -133,7 +133,8 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
 
   function cancel() { job.current?.abort(); job.current = null; setRunning(false); setError(""); }
   const total = positions.length;
-  const doneCount = Math.max(Object.keys(results).length, activeResults.length);
+  const savedPositionKeys = new Set(activeResults.map((item) => `${item.ply}:${item.fen}`));
+  const doneCount = Math.max(Object.keys(results).length, positions.filter((position) => savedPositionKeys.has(`${position.ply}:${position.fen}`)).length);
   const reviewPoints: ReviewPoint[] = positions.map((position) => {
     const record = byPositionResult(activeResults, position);
     const analysis = results[position.ply] ?? (record ? fromSaved(record) : null);
@@ -149,6 +150,7 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
     depth: reviewPoints[move.ply - 1]?.analysis?.depth,
   }));
   const gameSummary = summarizeClassifiedMoves(classifications);
+  const analyzedAtDepth = positions.filter((position) => activeResults.some((item) => item.ply === position.ply && item.fen === position.fen)).length;
   if (reviewOpen) return <MistakeReviewSession gameId={gameId} browserLocal={browserLocal} critical={reviewableMoves} onSelect={onSelect} onExit={() => setReviewOpen(false)} openingName={openingName} playerColor={playerColor} />;
   return <section className="flex min-h-0 max-h-[max(480px,calc(100dvh-160px))] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b] shadow-[0_18px_60px_rgba(0,0,0,0.18)]" aria-label="Full game analysis">
     <header className="border-b border-white/[0.07] p-4">
@@ -189,7 +191,7 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
       </button>;
     })}</div>
     </div>}
-    {!reviewOpen && panel === "summary" && <div className="min-h-0 flex-1 overflow-y-auto p-4"><GameReviewSummary summary={gameSummary} onSelect={onSelect} onReviewMistakes={() => setReviewOpen(true)} /></div>}
+    {!reviewOpen && panel === "summary" && <div className="min-h-0 flex-1 overflow-y-auto p-4"><GameReviewSummary summary={gameSummary} onSelect={onSelect} onReviewMistakes={() => setReviewOpen(true)} analyzedAtDepth={analyzedAtDepth} totalPositions={total} running={running} /></div>}
     {!reviewOpen && panel === "graph" && <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"><EvaluationReview points={reviewPoints} selectedPly={selectedPly} onSelect={onSelect} thresholds={thresholds} onThresholdsChange={setThresholds} /></div>}
     <footer className="border-t border-white/[0.07] p-3"><button className="w-full rounded-lg bg-[#7655dc]/20 px-3 py-2.5 text-sm font-medium hover:bg-[#7655dc]/30" onClick={() => setReviewOpen(true)}>Review My Mistakes</button></footer>
   </section>;
@@ -204,16 +206,42 @@ function classificationIcon(classification: MoveClassification) {
 }
 
 function classificationColor(classification: MoveClassification) {
-  return ({ Brilliant: "text-cyan-200", Great: "text-emerald-200", Best: "text-green-300", Excellent: "text-lime-200", Good: "text-gray-300", Inaccuracy: "text-amber-200", Mistake: "text-orange-300", Blunder: "text-rose-300", Book: "text-sky-200" })[classification];
+  return ({ Brilliant: "text-cyan-300", Great: "text-blue-300", Best: "text-green-300", Excellent: "text-lime-300", Good: "text-emerald-300", Inaccuracy: "text-yellow-300", Mistake: "text-orange-300", Blunder: "text-red-300", Book: "text-purple-300" })[classification];
 }
 
-function GameReviewSummary({ summary, onSelect, onReviewMistakes }: { summary: ReturnType<typeof summarizeClassifiedMoves>; onSelect: (ply: number) => void; onReviewMistakes: () => void }) {
+function GameReviewSummary({ summary, onSelect, onReviewMistakes, analyzedAtDepth, totalPositions, running }: {
+  summary: ReturnType<typeof summarizeClassifiedMoves>;
+  onSelect: (ply: number) => void;
+  onReviewMistakes: () => void;
+  analyzedAtDepth: number;
+  totalPositions: number;
+  running: boolean;
+}) {
   const labels: MoveClassification[] = ["Brilliant", "Great", "Best", "Excellent", "Good", "Inaccuracy", "Mistake", "Blunder", "Book"];
-  return <section aria-label="Game review summary"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Game Review</h3><p className="mt-1 max-w-xl text-xs text-gray-400">Classifications use compatible saved analysis at depth 10 or higher. Excellent is ≤10 cp loss; Good is below your inaccuracy threshold. Mate scores and missing data are left unclassified.</p></div><button className="rounded-lg bg-[#7655dc]/25 px-3 py-2 text-xs hover:bg-[#7655dc]/35" onClick={onReviewMistakes}>Review My Mistakes</button></div>
-    <div className="mt-4 grid gap-3 sm:grid-cols-2">{(["white", "black"] as const).map((color) => <div key={color} className="rounded-xl border border-white/[0.07] bg-black/15 p-3"><h4 className="font-medium">{color === "white" ? "White" : "Black"}</h4><div className="mt-2 grid grid-cols-3 gap-2">{labels.map((label) => <div key={label} className="rounded-lg bg-white/[0.035] px-2 py-1.5"><p className={`text-[10px] ${classificationColor(label)}`}>{label}</p><p className="text-lg font-semibold tabular-nums">{summary.byColor[color][label]}</p></div>)}</div></div>)}</div>
-    <div className="mt-4 grid gap-3 sm:grid-cols-3"><SummaryCount title="Classified moves" value={summary.bestMoves.length + summary.critical.length + summary.byColor.white.Excellent + summary.byColor.black.Excellent + summary.byColor.white.Good + summary.byColor.black.Good} /><SummaryCount title="Critical positions" value={summary.critical.length} /><SummaryCount title="Missed opportunities" value={summary.missedOpportunities.length} /></div>
-    <h4 className="mt-5 text-sm font-medium">Critical positions & missed opportunities</h4>{summary.critical.length ? <div className="mt-2 space-y-1">{summary.critical.map((move) => <button key={move.ply} className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/[0.06] px-3 py-2 text-left text-sm hover:bg-white/[0.04]" onClick={() => onSelect(move.ply)}><span>{move.color === "white" ? "White" : "Black"} · {Math.ceil(move.ply / 2)}{move.color === "white" ? "." : "…"} {move.san} · <span className={classificationColor(move.classification!)}>{move.classification}</span></span><span className="text-xs text-gray-400">{move.lossCp} cp loss {move.bestMove ? `· best: ${move.bestMove}` : ""}</span></button>)}</div> : <p className="mt-2 text-xs text-gray-500">No classified critical positions in the compatible saved data.</p>}
-    <p className="mt-4 text-[10px] leading-4 text-gray-500">No proprietary accuracy percentage is calculated. Brilliant/Great and Book are withheld: saved single-PV evaluations do not provide verified deep multi-PV exceptional-move evidence or a verified opening-book source.</p>
+  const total = classifiedMoveCount(summary);
+  const hasAnalysis = analyzedAtDepth > 0;
+  const hasEligibleMoves = total > 0;
+  const reason = hasAnalysis
+    ? "No moves met the current classification requirements. Moves need compatible before and after evaluations, a legal saved continuation, and sufficient search depth. Mate-only positions are not classified."
+    : "Run full-game analysis to create compatible evaluations for this game.";
+  return <section aria-label="Game review summary">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Game Review</h3><p className="mt-1 max-w-xl text-xs text-gray-400">Classifications use compatible saved analysis at depth 10 or higher. Excellent is ≤10 cp loss; Good is below your inaccuracy threshold. Mate scores and missing data are left unclassified.</p></div>
+      <button className="rounded-lg bg-[#7655dc]/25 px-3 py-2 text-xs hover:bg-[#7655dc]/35" onClick={onReviewMistakes}>Review My Mistakes</button></div>
+    {running && !hasAnalysis ? <p className="mt-4 rounded-xl border border-white/[0.07] bg-black/15 p-4 text-sm text-gray-300">Analyzing game positions… classifications will appear as compatible results are saved.</p>
+      : !hasAnalysis ? <p className="mt-4 rounded-xl border border-dashed border-white/10 bg-black/10 p-4 text-sm text-gray-400">Analyze game to see move classifications.</p>
+        : !hasEligibleMoves ? <p className="mt-4 rounded-xl border border-white/[0.07] bg-black/10 p-4 text-sm text-gray-400">{reason}</p>
+          : <><div className="mt-4 grid gap-3 sm:grid-cols-2">{(["white", "black"] as const).map((color) => {
+            const entries = labels.filter((label) => summary.byColor[color][label] > 0);
+            return <div key={color} className="rounded-xl border border-white/[0.07] bg-black/15 p-3"><h4 className="font-medium">{color === "white" ? "White" : "Black"}</h4>
+              {entries.length ? <div className="mt-2 flex flex-wrap gap-2">{entries.map((label) => <span key={label} className={`rounded-lg border border-white/[0.06] bg-white/[0.035] px-2.5 py-1.5 text-xs ${classificationColor(label)}`}><strong>{classificationIcon(label)} {label}</strong><span className="ml-2 tabular-nums text-white">{summary.byColor[color][label]}</span></span>)}</div> : <p className="mt-2 text-xs text-gray-500">No classified moves.</p>}
+            </div>;
+          })}</div>
+          <details className="mt-3 rounded-xl border border-white/[0.07]"><summary className="cursor-pointer px-3 py-2 text-xs text-gray-400">Show zero-count categories</summary><div className="grid gap-3 p-3 sm:grid-cols-2">{(["white", "black"] as const).map((color) => <div key={color}><h4 className="text-xs font-medium text-gray-400">{color === "white" ? "White" : "Black"}</h4><div className="mt-2 flex flex-wrap gap-1.5">{labels.filter((label) => !summary.byColor[color][label]).map((label) => <span key={label} className={`rounded bg-white/[0.035] px-2 py-1 text-[10px] ${classificationColor(label)}`}>{label} 0</span>)}</div></div>)}</div></details>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3"><SummaryCount title="Classified moves" value={total} /><SummaryCount title="Critical positions" value={summary.critical.length} /><SummaryCount title="Missed opportunities" value={summary.missedOpportunities.length} /></div>
+          <h4 className="mt-5 text-sm font-medium">Critical positions &amp; missed opportunities</h4>{summary.critical.length ? <div className="mt-2 space-y-1">{summary.critical.map((move) => <button key={move.ply} className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/[0.06] px-3 py-2 text-left text-sm hover:bg-white/[0.04]" onClick={() => onSelect(move.ply)}><span>{move.color === "white" ? "White" : "Black"} · {Math.ceil(move.ply / 2)}{move.color === "white" ? "." : "…"} {move.san} · <span className={classificationColor(move.classification!)}>{move.classification}</span></span><span className="text-xs text-gray-400">{move.lossCp} cp loss {move.bestMove ? `· best: ${move.bestMove}` : ""}</span></button>)}</div> : <p className="mt-2 text-xs text-gray-500">No classified critical positions in the compatible saved data.</p>}
+          </>
+    }
+    <p className="mt-4 text-[10px] leading-4 text-gray-500">Brilliant/Great and Book require verified evidence that is not available in single-PV analysis. They remain unassigned. {analyzedAtDepth < totalPositions && hasAnalysis ? `${totalPositions - analyzedAtDepth} positions do not yet have compatible saved results at this depth.` : ""}</p>
   </section>;
 }
 

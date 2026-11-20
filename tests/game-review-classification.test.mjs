@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { test } from "node:test";
 registerHooks({ resolve(specifier, context, nextResolve) { return specifier.startsWith("@/") ? nextResolve(new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href, context) : nextResolve(specifier, context); } });
-const { classifyGameMoves, exceptionalMoveEligibility, summarizeClassifiedMoves } = await import("../lib/game-review-classification.ts");
+const { classifyGameMoves, exceptionalMoveEligibility, summarizeClassifiedMoves, classifiedMoveCount } = await import("../lib/game-review-classification.ts");
 const thresholds = { inaccuracy: 50, mistake: 100, blunder: 200 };
 const position = (ply, san, score, best = "Nf3", depth = 12, kind = "cp", variation = [best, "Nc6"]) => ({
   ply, san, fen: ply === 1 ? "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" : ply === 2 ? "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2" : "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", settings: "lite", evaluation: score / 100,
@@ -42,4 +42,16 @@ test("exceptional labels and Book are withheld without verified source evidence"
   ]);
   assert.equal(summary.byColor.white.Best, 1); assert.equal(summary.byColor.black.Blunder, 1);
   assert.equal(summary.critical.length, 2); assert.equal(summary.missedOpportunities.length, 2);
+});
+
+test("summary totals count every classified move by side without adding empty categories", () => {
+  const moves = [
+    { ply: 1, san: "e4", color: "white", classification: "Best" },
+    { ply: 2, san: "e5", color: "black", classification: "Good" },
+    { ply: 3, san: "Nf3", color: "white", classification: "Inaccuracy" },
+  ];
+  const summary = summarizeClassifiedMoves(moves);
+  assert.equal(summary.byColor.white.Best, 1);
+  assert.equal(summary.byColor.black.Good, 1);
+  assert.equal(classifiedMoveCount(summary), 3);
 });

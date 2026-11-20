@@ -73,3 +73,8 @@ export function summarizeClassifiedMoves(moves: ClassifiedMove[]) {
   const critical = moves.filter((move) => move.classification === "Inaccuracy" || move.classification === "Mistake" || move.classification === "Blunder");
   return { byColor, critical, bestMoves: moves.filter((move) => move.classification === "Best"), missedOpportunities: critical.filter((move) => move.bestMove) };
 }
+
+export function classifiedMoveCount(summary: ReturnType<typeof summarizeClassifiedMoves>) {
+  return Object.values(summary.byColor).reduce((total, counts) =>
+    total + Object.values(counts).reduce((colorTotal, count) => colorTotal + count, 0), 0);
+}
