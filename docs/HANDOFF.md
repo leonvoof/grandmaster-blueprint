@@ -398,6 +398,13 @@ Run `npm install` once, then `npm run dev`. The predev hook generates Prisma Cli
 - Verified the production build in Chrome using the isolated public profile and synthetic `Browser state regression` PGN. Original `Qg4` Inaccuracy and `d5` Excellent badges updated on notation selection and arrow navigation; flipping the board moved the badge to the correctly mirrored square. In Explore Position, the existing `d5` branch showed Excellent and a new legal `d6` branch showed Good; switching between branches restored each badge. A newly played `d4` showed the analyzing pulse and then its engine-supported Blunder badge. At 390×844, the badge remained visible and the document had no horizontal overflow. Interactions completed without visible app errors; console exception instrumentation was not enabled in this pass.
 - Browser checks used synthetic game data in the isolated profile. No personal browser records, SQLite data, databases, cloud resources, or deployments were modified.
 
+### Public dashboard and navigation visual refresh
+
+- Refined the public shell with KnightForge typography, restrained turquoise branding, clearer spacing, active-page markers, hover/focus states, and an accessible mobile drawer. Public navigation still contains only Dashboard, Games, Analysis, and Tactics. Private navigation styling and page content were preserved.
+- Replaced the public landing page with a responsive training dashboard containing direct links to the existing public features, an honest new-library empty state, and up to three recent browser-saved games when present. It reads existing local progress without changing it and does not show invented ratings or activity metrics.
+- Chrome verification against the public production build passed at 1440×960 and 390×844. Checked public destinations, dashboard active state and links, mobile drawer open/close, saved-game display from the isolated browser profile, navigation to Games with the existing viewer available, no horizontal overflow, and no browser exceptions. Screenshots were visually inspected. `npx tsc --noEmit`, `npm run lint`, and `GMB_SITE_MODE=public GMB_DB_PROVIDER=postgresql npm run build` passed.
+- No Games/Analysis code, local browser data, databases, API routes, or security behavior was changed. No deployment or push occurred.
+
 ### Public move classification calibration
 
 - The old classifier mapped raw centipawn loss directly to penalty labels, including when the mover remained decisively ahead. Mistake review also computed severity independently. Game analysis, mistake review, graph markers, summaries, and Explore Position now use the same classifier and thresholds. Board annotations continue to use the selected move’s label.

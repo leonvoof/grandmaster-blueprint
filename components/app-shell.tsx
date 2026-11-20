@@ -16,24 +16,24 @@ export function AppShell({ children, publicMode }: { children: React.ReactNode; 
   if (pathname === "/login") return <>{children}</>;
 
   return (
-    <div className="min-h-screen bg-[#0b0d13] text-[#f4f3f8]">
+    <div className={`min-h-screen text-[#f4f3f8] ${publicMode ? "knightforge-public-shell bg-[#0a0e0d]" : "bg-[#0b0d13]"}`}>
       {mobileOpen && <button aria-label="Close navigation" className="fixed inset-0 z-30 bg-black/65 lg:hidden" onClick={() => setMobileOpen(false)} />}
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-[258px] flex-col border-r border-white/[0.07] bg-[#101219] transition-transform lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
-        <div className="flex h-[82px] items-center justify-between border-b border-white/[0.07] px-6">
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-[258px] flex-col border-r transition-transform duration-200 lg:translate-x-0 ${publicMode ? "knightforge-public-sidebar border-white/[.075] bg-[#0e1412]" : "border-white/[0.07] bg-[#101219]"} ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <div className={`flex h-[82px] items-center justify-between border-b px-5 ${publicMode ? "border-white/[.075]" : "border-white/[0.07]"}`}>
           <Link href="/" className="flex items-center gap-3" onClick={() => setMobileOpen(false)}>
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#7655dc]/15 text-[#aa91ff]"><Crown size={21} strokeWidth={1.8} /></span>
-            <span><span className="block text-[14px] font-semibold tracking-[0.01em]">KnightForge</span><span className="mt-0.5 block text-[10px] font-medium uppercase tracking-[0.2em] text-[#918e9e]">Chess training</span></span>
+            <span className={`grid h-10 w-10 place-items-center rounded-xl ${publicMode ? "bg-[#70d6b8]/10 text-[#83ddc2] ring-1 ring-[#70d6b8]/15" : "bg-[#7655dc]/15 text-[#aa91ff]"}`}><Crown size={21} strokeWidth={1.8} /></span>
+            <span><span className="block text-[15px] font-semibold tracking-[-.025em]">KnightForge</span><span className={`mt-0.5 block text-[9px] font-semibold uppercase tracking-[.21em] ${publicMode ? "text-[#81918a]" : "text-[#918e9e]"}`}>Chess training</span></span>
           </Link>
-          <button aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="text-[#898796] lg:hidden"><X size={19} /></button>
+          <button aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="rounded-lg p-2 text-[#898796] transition-colors hover:bg-white/5 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#70d6b8] lg:hidden"><X size={19} /></button>
         </div>
-        <div className="px-4 pt-7">
-          <div className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#706e7c]">Training workspace</div>
-          <nav className="space-y-1" aria-label="Main navigation">
+        <div className="px-3 pt-7">
+          <div className={`mb-3 px-3 text-[9px] font-semibold uppercase tracking-[.2em] ${publicMode ? "text-[#65746d]" : "text-[#706e7c]"}`}>Training workspace</div>
+          <nav className={publicMode ? "space-y-1.5" : "space-y-1"} aria-label="Main navigation">
             {items.map(({ label, href, icon: Icon }) => {
               const selected = pathname === href;
-              return <Link key={href} href={href} onClick={() => setMobileOpen(false)} aria-current={selected ? "page" : undefined} className={`group flex h-10 items-center gap-3 rounded-lg px-3 text-[13px] transition-colors ${selected ? "bg-[#7655dc]/15 font-medium text-[#b6a3ff]" : "text-[#a2a0ad] hover:bg-white/[0.045] hover:text-white"}`}>
-                <Icon size={17} strokeWidth={1.8} className={selected ? "text-[#a58aff]" : "text-[#777582] group-hover:text-[#bab5c7]"} />{label}
-                {selected && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#9b7bff]" />}
+              return <Link key={href} href={href} onClick={() => setMobileOpen(false)} aria-current={selected ? "page" : undefined} className={`group relative flex ${publicMode ? "h-11 rounded-xl" : "h-10 rounded-lg"} items-center gap-3 px-3 text-[13px] transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 ${publicMode ? selected ? "bg-[#70d6b8]/[.105] font-semibold text-[#a8eed8] before:absolute before:bottom-2.5 before:left-0 before:top-2.5 before:w-[2px] before:rounded-full before:bg-[#70d6b8] before:content-[''] focus-visible:outline-[#70d6b8]" : "text-[#9aa9a1] hover:bg-white/[.04] hover:text-[#e2ece6] focus-visible:outline-[#70d6b8]" : selected ? "bg-[#7655dc]/15 font-medium text-[#b6a3ff] focus-visible:outline-[#a58aff]" : "text-[#a2a0ad] hover:bg-white/[0.045] hover:text-white focus-visible:outline-[#a58aff]"}`}>
+                <Icon size={17} strokeWidth={1.8} className={publicMode ? selected ? "text-[#70d6b8]" : "text-[#718079] group-hover:text-[#9ce6ce]" : selected ? "text-[#a58aff]" : "text-[#777582] group-hover:text-[#bab5c7]"} />{label}
+                {selected && <span className={`ml-auto h-1.5 w-1.5 rounded-full ${publicMode ? "bg-[#70d6b8] shadow-[0_0_10px_#70d6b877]" : "bg-[#9b7bff]"}`} />}
               </Link>;
             })}
           </nav>
@@ -51,11 +51,11 @@ export function AppShell({ children, publicMode }: { children: React.ReactNode; 
         </div>
       </aside>
       <div className="min-h-screen lg:pl-[258px]">
-        <header className="sticky top-0 z-20 flex h-[66px] items-center justify-between border-b border-white/[0.07] bg-[#0b0d13]/90 px-5 backdrop-blur-xl sm:px-8">
-          <div className="flex items-center gap-3"><button aria-label="Open navigation" className="text-[#aaa7b4] lg:hidden" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><span className="text-[12px] text-[#777582]">Workspace</span><span className="text-[#4e4c57]">/</span><span className="text-[12px] text-[#d3d0db]">{active?.label ?? "Dashboard"}</span></div>
+        <header className={`sticky top-0 z-20 flex h-[66px] items-center justify-between border-b backdrop-blur-xl ${publicMode ? "border-white/[.075] bg-[#0a0e0d]/90 px-4 sm:px-8" : "border-white/[0.07] bg-[#0b0d13]/90 px-5 sm:px-8"}`}>
+          <div className="flex items-center gap-3"><button aria-label="Open navigation" aria-expanded={mobileOpen} className={`rounded-lg p-2 transition-colors focus-visible:outline focus-visible:outline-2 lg:hidden ${publicMode ? "text-[#a3b3aa] hover:bg-[#70d6b8]/[.08] hover:text-[#a8eed8] focus-visible:outline-[#70d6b8]" : "text-[#aaa7b4] focus-visible:outline-[#a58aff]"}`} onClick={() => setMobileOpen(true)}><Menu size={20} /></button><span className={`text-[11px] ${publicMode ? "text-[#718079]" : "text-[#777582]"}`}>{publicMode ? "KNIGHTFORGE" : "Workspace"}</span><span className={publicMode ? "text-[#384b42]" : "text-[#4e4c57]"}>/</span><span className={`text-[12px] font-medium ${publicMode ? "text-[#d5e3db]" : "text-[#d3d0db]"}`}>{active?.label ?? "Dashboard"}</span></div>
           {!publicMode && <LogoutButton />}
         </header>
-        <main className={`mx-auto w-full max-w-[1440px] pb-14 ${publicMode && (pathname === "/games" || pathname === "/analysis") ? "px-3 pt-4 sm:px-6" : "px-5 pt-8 sm:px-8 lg:px-10"}`}>{children}</main>
+        <main className={`mx-auto w-full max-w-[1440px] pb-14 ${publicMode && (pathname === "/games" || pathname === "/analysis") ? "px-3 pt-4 sm:px-6" : publicMode ? "px-4 pt-5 sm:px-7 sm:pt-7 lg:px-10 lg:pt-9" : "px-5 pt-8 sm:px-8 lg:px-10"}`}>{children}</main>
       </div>
     </div>
   );
