@@ -15,13 +15,13 @@ import { classifyGameMoves, summarizeClassifiedMoves, classifiedMoveCount, type 
 
 type Position = GamePosition;
 import { readBrowserAnalyses, saveBrowserAnalysis, type SavedAnalysis as Saved } from "@/lib/browser-game-review";
-type Props = { browserLocal?: boolean; gameId: string; positions: Position[]; selectedPly: number; onSelect: (ply: number) => void; onPositionAnalysis?: (analysis: Analysis | null, fen?: string) => void; onReviewModeChange?: (active: boolean) => void; openingName?: string; playerColor?: "white" | "black" | null };
+type Props = { browserLocal?: boolean; gameId: string; positions: Position[]; selectedPly: number; onSelect: (ply: number) => void; onPositionAnalysis?: (analysis: Analysis | null, fen?: string) => void; onSelectedMoveClassification?: (classification: MoveClassification | null, analyzing: boolean) => void; onReviewModeChange?: (active: boolean) => void; openingName?: string; playerColor?: "white" | "black" | null };
 
 function fromSaved(saved: Saved): Analysis {
   return { engine: saved.engine, depth: saved.depth, score: saved.scoreType && saved.scoreValue !== null ? { kind: saved.scoreType, value: saved.scoreValue } : null, bestMove: saved.bestMove, variation: JSON.parse(saved.variation), ...(saved.terminal && { terminal: saved.terminal as Analysis["terminal"] }) };
 }
 
-export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly, onSelect, onPositionAnalysis, onReviewModeChange, openingName, playerColor }: Props) {
+export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly, onSelect, onPositionAnalysis, onSelectedMoveClassification, onReviewModeChange, openingName, playerColor }: Props) {
   const [depth, setDepth] = useState(DEFAULT_DEPTH);
   const [saved, setSaved] = useState<Saved[]>([]);
   const [results, setResults] = useState<Record<number, Analysis>>({});
@@ -143,6 +143,9 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
   });
   const classifications = classifyGameMoves(reviewPoints, thresholds);
   const classificationByPly = new Map(classifications.map((move) => [move.ply, move]));
+  const selectedMoveClassification = classificationByPly.get(selectedPly)?.classification ?? null;
+  const selectedMoveAnalyzing = Boolean(!selectedMoveClassification && !reviewOpen && (running || (browserLocal && ready && selectedPly > 0 && !selectedAnalysis && !visibleAnalysis)));
+  useEffect(() => { onSelectedMoveClassification?.(selectedMoveClassification, selectedMoveAnalyzing); }, [onSelectedMoveClassification, selectedMoveClassification, selectedMoveAnalyzing]);
   const reviewableMoves = findCriticalMoves(reviewPoints, thresholds).filter((move) => !browserLocal || (classificationByPly.get(move.ply)?.classification === move.classification && classificationByPly.get(move.ply)?.bestMove)).map((move) => ({
     ...move,
     san: positions[move.ply]?.san ?? move.san,

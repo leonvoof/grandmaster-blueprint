@@ -14,6 +14,8 @@ import { connectedPlayerColor, evaluationBarState, gameViewerPositionForKey, res
 import { publicExplorationTarget, rememberPath, variationEdges } from "@/lib/public-exploration";
 import { browserGameId, readBrowserAnalyses, readBrowserVariation, saveBrowserVariation, type SavedAnalysis } from "@/lib/browser-game-review";
 import { validatedPgn, type PublicGame } from "@/lib/public-progress";
+import { boardMoveAnnotation, boardSquareCell } from "@/lib/board-annotations";
+import type { MoveClassification } from "@/lib/game-review-classification";
 import type { Analysis } from "@/lib/stockfish/position";
 
 type Ply = { san: string; fen: string; from: string; to: string; promotion: string | null };
@@ -84,6 +86,7 @@ export function GameViewer({ local }: { local?: {
   const [saved, setSaved] = useState<Saved[]>([]);
   const [saving, setSaving] = useState(false);
   const [analysisGameId, setAnalysisGameId] = useState<string | null>(null);
+  const [selectedGameMove, setSelectedGameMove] = useState<{ gameId: string; ply: number; classification: MoveClassification | null; analyzing: boolean } | null>(null);
   const [initialFen, setInitialFen] = useState(() => new Chess().fen());
   const [positionAnalysis, setPositionAnalysis] = useState<{ fen: string; analysis: Analysis } | null>(null);
   const [mobilePanel, setMobilePanel] = useState<"board" | "analysis">("board");
@@ -124,6 +127,11 @@ export function GameViewer({ local }: { local?: {
   const visibleAnalysis = exploreMode ? exploreAnalysis : positionAnalysis?.fen === shown ? positionAnalysis.analysis : null;
   const gamePositions = useMemo(() => [{ fen: initialFen, ply: 0, san: null }, ...moves.map((move, index) => ({ fen: move.fen, ply: index + 1, san: move.san }))], [initialFen, moves]);
   const updatePositionAnalysis = useCallback((analysis: Analysis | null, fen?: string) => setPositionAnalysis(analysis && fen ? { fen, analysis } : null), []);
+  const updateSelectedMoveClassification = useCallback((classification: MoveClassification | null, analyzing: boolean) => {
+    if (!analysisGameId) return;
+    setSelectedGameMove((previous) => previous?.gameId === analysisGameId && previous.ply === idx && previous.classification === classification && previous.analyzing === analyzing
+      ? previous : { gameId: analysisGameId, ply: idx, classification, analyzing });
+  }, [analysisGameId, idx]);
   const updateReviewMode = useCallback((active: boolean) => {
     setReviewMode(active);
     if (active) setMobilePanel("analysis");
@@ -252,6 +260,7 @@ export function GameViewer({ local }: { local?: {
       activeExploreJob.current?.abort(); setExploreMode(false); setShowOriginalReview(false); setExploration(null); setExploreTargets([]);
       exploreResultRef.current = {}; setExploreAnalyses({}); setSavedGameAnalyses([]);
       setPgn(text); setAnalysisGameId(savedGameId); setMoves(replay.moves); setInitialFen(replay.initialFen);
+      setSelectedGameMove(null);
       setIdx(0); setMeta(replay.headers); setPositionAnalysis(null); setErr(""); setMobilePanel("board");
     } catch { setErr("Could not read this PGN. Check the notation and try again."); }
   }, [browserLocal]);
@@ -397,7 +406,13 @@ export function GameViewer({ local }: { local?: {
     } catch (reason) { setExploreError(reason instanceof Error ? reason.message : "Could not save the explored line."); }
     finally { setSavingVariation(false); }
   }
-  const assessmentColor = exploreClassification?.classification ? classificationSquareColor(exploreClassification.classification) : null;
+  const boardClassification = exploreMode ? exploreClassification?.classification ?? null : selectedGameMove?.gameId === analysisGameId && selectedGameMove.ply === idx ? selectedGameMove.classification : null;
+  const boardAnnotation = boardMoveAnnotation(boardClassification);
+  const annotationSquare = currentMove?.to ? boardSquareCell(currentMove.to, orientation) : null;
+  const annotationPending = exploreMode
+    ? Boolean(exploredNode?.san && !exploreError && !exploreClassification && (!parentAnalysis || !exploreAnalysis))
+    : Boolean(currentMove && selectedGameMove?.gameId === analysisGameId && selectedGameMove.ply === idx && selectedGameMove.analyzing);
+  const assessmentColor = (exploreClassification?.classification ? classificationSquareColor(exploreClassification.classification) : null) ?? (boardAnnotation?.tone === "vivid" ? boardAnnotation.color : null);
   const lastMoveStyles = currentMove ? {
     [currentMove.from]: { background: browserLocal ? "linear-gradient(0deg, rgba(80,200,170,.28), rgba(80,200,170,.28))" : "linear-gradient(0deg, rgba(165,138,255,.34), rgba(165,138,255,.34))" },
     [currentMove.to]: { background: assessmentColor ? `linear-gradient(0deg, ${assessmentColor}66, ${assessmentColor}66)` : browserLocal ? "linear-gradient(0deg, rgba(80,200,170,.44), rgba(80,200,170,.44))" : "linear-gradient(0deg, rgba(165,138,255,.52), rgba(165,138,255,.52))", boxShadow: assessmentColor ? `inset 0 0 0 3px ${assessmentColor}` : undefined },
@@ -465,7 +480,11 @@ export function GameViewer({ local }: { local?: {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><p className="knightforge-eyebrow text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a994f0]">{exploreMode ? "Explore Position" : "Game position"}</p><p className="mt-1 text-xs text-gray-400">{exploreMode ? "Explore legal continuations without changing the saved PGN." : "Play any legal move to start a variation."}</p></div>{exploreMode ? (moves.length > 0 && <button className="btn" onClick={returnToGame}>Return to PGN</button>) : <button className="knightforge-board-accent-btn btn border-[#a58aff]/30 text-[#d7cbff]" onClick={startExploration}>Explore Position</button>}</div>
         <div className={`knightforge-board-row flex items-stretch gap-2 ${browserLocal ? "mx-auto lg:max-w-[min(100%,max(380px,calc(100dvh-420px)))]" : ""}`}>
           <EvaluationBar analysis={visibleAnalysis} orientation={orientation} loading={exploreMode && !exploreAnalysis && !exploreError} />
-          <div className="min-w-0 flex-1"><Chessboard position={shown} boardOrientation={orientation} onPieceDrop={(from, to) => browserLocal ? publicMove(from, to) : move(from, to)} onSquareClick={browserLocal ? clickSquare : undefined} onPromotionCheck={(from, to) => { if (browserLocal) return false; try { return new Chess(shown).moves({ square: from, verbose: true }).some((candidate) => candidate.to === to && candidate.promotion); } catch { return false; } }} onPromotionPieceSelect={(piece, from, to) => { if (from && to) move(from, to, piece?.[1]?.toLowerCase() ?? "q"); return true; }} animationDuration={160} customDarkSquareStyle={browserLocal ? { backgroundColor: "#42665e" } : undefined} customLightSquareStyle={browserLocal ? { backgroundColor: "#d8e5dc" } : undefined} customSquareStyles={squareStyles} /></div>
+          <div className="relative min-w-0 flex-1"><Chessboard position={shown} boardOrientation={orientation} onPieceDrop={(from, to) => browserLocal ? publicMove(from, to) : move(from, to)} onSquareClick={browserLocal ? clickSquare : undefined} onPromotionCheck={(from, to) => { if (browserLocal) return false; try { return new Chess(shown).moves({ square: from, verbose: true }).some((candidate) => candidate.to === to && candidate.promotion); } catch { return false; } }} onPromotionPieceSelect={(piece, from, to) => { if (from && to) move(from, to, piece?.[1]?.toLowerCase() ?? "q"); return true; }} animationDuration={160} customDarkSquareStyle={browserLocal ? { backgroundColor: "#42665e" } : undefined} customLightSquareStyle={browserLocal ? { backgroundColor: "#d8e5dc" } : undefined} customSquareStyles={squareStyles} />
+            {annotationSquare && (boardAnnotation || annotationPending) && <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 grid grid-cols-8 grid-rows-8">
+              <span className={`relative justify-self-end self-start m-0.5 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-[10px] font-black leading-none shadow-md ring-1 ring-black/20 sm:m-1 sm:h-6 sm:min-w-6 sm:text-xs ${boardAnnotation?.tone === "subtle" ? "bg-black/65" : "bg-[#11131b]/90"}`} style={{ gridColumnStart: annotationSquare.column + 1, gridRowStart: annotationSquare.row + 1, color: boardAnnotation?.color ?? "#d1d5db", opacity: boardAnnotation?.tone === "subtle" ? 0.72 : 1 }} title={boardAnnotation ? `${boardClassification} move` : "Analyzing move"}>{boardAnnotation?.symbol ?? <span className="h-2 w-2 animate-pulse rounded-full bg-gray-300/70" />}</span>
+            </div>}
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           {exploreMode && browserLocal && exploration ? <>{navigationButtons.map(({ key, label, symbol }) => { const target = publicExplorationTarget(exploration, key, preferredChildren.current); return <button className="btn" key={key} aria-label={label} disabled={!target || target === exploration.currentId} onClick={() => target && selectExplore(target)}>{symbol}</button>; })}<span className="text-xs text-gray-400">{explorePath.length - 1} plies</span></> : exploreMode ? <><button className="btn" onClick={() => setExploration((tree) => tree ? undoExplorationMove(tree) : tree)}>Undo move</button><span className="min-w-20 text-center text-xs tabular-nums text-gray-400">{Math.max(0, explorePath.length - 1)} explored plies</span><button className="btn" onClick={returnToGame}>Return to game</button></> : <><button aria-label="Go to first move" title="Beginning (↑)" className="btn" onClick={() => position(0)}>⇤</button><button aria-label="Previous move" title="Previous (←)" className="btn" disabled={idx === 0} onClick={() => position(idx - 1)}>←</button><span className="min-w-20 text-center text-xs tabular-nums text-gray-400">{idx} / {moves.length}</span><button aria-label="Next move" title="Next (→)" className="btn" disabled={idx === moves.length} onClick={() => position(idx + 1)}>→</button><button aria-label="Go to last move" title="End (↓)" className="btn" onClick={() => position(moves.length)}>⇥</button></>}
@@ -487,7 +506,7 @@ export function GameViewer({ local }: { local?: {
             {analysisGameId && <button className="btn self-start" onClick={() => setShowOriginalReview((visible) => !visible)}>{showOriginalReview ? "Hide original game review" : "Show original game review"}</button>}
           </div>
         </div>}
-        {analysisGameId ? <div className={exploreMode && !showOriginalReview ? "hidden" : "block"}><FullGameAnalysis key={`${analysisGameId}:${local?.restoreVersion ?? 0}`} browserLocal={browserLocal} gameId={analysisGameId} positions={gamePositions} selectedPly={idx} onSelect={position} onPositionAnalysis={updatePositionAnalysis} onReviewModeChange={updateReviewMode} openingName={meta.Opening} playerColor={playerColor} /></div> : !exploreMode && <div className="flex min-h-0 max-h-[max(380px,calc(100dvh-160px))] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b]">
+        {analysisGameId ? <div className={exploreMode && !showOriginalReview ? "hidden" : "block"}><FullGameAnalysis key={`${analysisGameId}:${local?.restoreVersion ?? 0}`} browserLocal={browserLocal} gameId={analysisGameId} positions={gamePositions} selectedPly={idx} onSelect={position} onPositionAnalysis={updatePositionAnalysis} onSelectedMoveClassification={updateSelectedMoveClassification} onReviewModeChange={updateReviewMode} openingName={meta.Opening} playerColor={playerColor} /></div> : !exploreMode && <div className="flex min-h-0 max-h-[max(380px,calc(100dvh-160px))] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b]">
           <header className="border-b border-white/[0.07] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a994f0]">Position analysis</p><h2 className="mt-1 text-lg font-medium">Explore this game</h2><p className="mt-1 text-xs text-gray-400">{positionAnalysis ? `White perspective · ${positionAnalysis.analysis.engine} depth ${positionAnalysis.analysis.depth}` : "Load and save a game to see persistent evaluations and review tools."}</p></header>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <div className="grid grid-cols-[auto_1fr_1fr] gap-1" aria-label="Game moves">{moves.map((ply, index) => <button key={`${ply.from}-${ply.to}-${index}`} className={`col-span-3 grid grid-cols-[2.5rem_minmax(0,1fr)] rounded-lg px-2.5 py-2 text-left text-sm ${idx === index + 1 ? "bg-[#7655dc]/20 text-white" : "text-gray-300 hover:bg-white/5"}`} onClick={() => position(index + 1)}><span className="text-[10px] text-gray-500">{Math.ceil((index + 1) / 2)}{index % 2 ? "…" : "."}</span><span>{ply.san}</span></button>)}</div>
