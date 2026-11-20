@@ -358,7 +358,7 @@ function Tactics({ progress, update }: { progress: PublicProgress | null; update
     setFetchError("");
   }
   return <div className={`${panel} knightforge-public-tactics`}>
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#70d6b8]">Tactics practice</p><h2 className="mt-1 text-xl font-semibold">Find the best move</h2></div><button className="knightforge-import-action btn min-h-11 px-4" onClick={requestNext}>Next Puzzle <span aria-hidden="true">→</span></button></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#70d6b8]">KnightForge Tactics</p><h2 className="mt-1 text-xl font-semibold">Find the best move</h2></div><button className="knightforge-import-action btn min-h-11 px-4" onClick={requestNext}>Next Puzzle <span aria-hidden="true">→</span></button></div>
     <section aria-label="Tactics performance" className="mt-4 rounded-xl border border-[#70d6b8]/15 bg-gradient-to-br from-[#70d6b8]/[.07] to-transparent p-3 sm:p-4">
       <div className="mb-3"><h3 className="text-sm font-semibold text-gray-100">Your Tactics Performance</h3><p className="mt-1 text-[11px] leading-5 text-gray-500">A puzzle counts when solved or skipped; simply loading it does not count.</p></div>
       {progress === null ? <p className="text-sm text-gray-400">Loading saved performance…</p> : totals?.attempted === 0 ? <p className="rounded-lg border border-white/[.06] bg-black/15 px-3 py-3 text-sm text-gray-400">No completed puzzles yet. Solve or skip a puzzle to start your history.</p> : <>
@@ -381,7 +381,11 @@ function Tactics({ progress, update }: { progress: PublicProgress | null; update
       </label>
       <p className="text-[11px] leading-5 text-gray-500 sm:col-span-2">Difficulty is relative to Lichess’s anonymous-user reference rating, not an exact puzzle rating range.</p>
     </div>
-    <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-400"><span>#{puzzle.id} · {puzzle.rating}</span><span className="rounded-full border border-white/10 px-2 py-1">{fallback ? "Offline fallback · filters not applied" : "Lichess puzzle"}</span>{loading && <span role="status" className="text-[#8bdac1]">Loading matching puzzle…</span>}{themesVisible && visiblePuzzleThemeLabels(puzzle.themes, true).map((label) => <span key={label} className="rounded-full border border-[#70d6b8]/20 bg-[#70d6b8]/[.07] px-2 py-1 text-[#b9eedb]">{label}</span>)}<a className="underline decoration-white/20 underline-offset-4 hover:text-[#8bdac1]" href="https://database.lichess.org/#puzzles">Lichess Puzzle Database · CC0</a></div>
+    <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-400"><span>#{puzzle.id} · {puzzle.rating}</span>{fallback && <span className="rounded-full border border-white/10 px-2 py-1">Offline fallback · filters not applied</span>}{loading && <span role="status" className="text-[#8bdac1]">Loading matching puzzle…</span>}{themesVisible && visiblePuzzleThemeLabels(puzzle.themes, true).map((label) => <span key={label} className="rounded-full border border-[#70d6b8]/20 bg-[#70d6b8]/[.07] px-2 py-1 text-[#b9eedb]">{label}</span>)}</div>
+    <details className="group mt-2 text-xs text-gray-500">
+      <summary className="w-fit cursor-pointer rounded-sm underline decoration-white/15 underline-offset-4 transition-colors hover:text-[#8bdac1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#70d6b8]">Puzzle source and licensing</summary>
+      <p className="mt-2 max-w-2xl leading-5">Puzzles are provided by Lichess and released under CC0. KnightForge does not claim authorship of the dataset. <a className="text-gray-400 underline decoration-white/20 underline-offset-4 hover:text-[#8bdac1]" href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">View the Lichess puzzle dataset</a>.</p>
+    </details>
     {fetchError && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/15 bg-amber-200/[.04] p-3 text-sm text-amber-100/80" role="status"><span>{fetchError} The current puzzle is still available; offline fallback puzzles do not apply the selected filters.</span><button className="btn" onClick={requestNext}>Retry</button></div>}
     <Puzzle key={`${presentation}:${puzzle.id}:${selected}`} row={puzzle} solved={() => finishAttempt(true, false)} skipped={() => finishAttempt(false, true)} moveAttempted={() => markMoveAttempt()} incorrect={() => markMoveAttempt(true)}>
       <p className="my-3 text-sm text-gray-400">Completed in this browser: {progress?.solves[puzzle.id] ?? 0}.</p>
@@ -417,7 +421,7 @@ function Puzzle({ row, solved, skipped, moveAttempted, incorrect, children }: { 
     if (next === line.length) solved();
     return true;
   }
-  return <>{children}<Board fen={fen} black={new Chess(puzzle.fen).turn() === "b"} move={move} />
+  return <>{children}<Board fen={fen} black={new Chess(puzzle.fen).turn() === "b"} move={move} green />
     <div className="mt-3 flex flex-wrap items-center gap-2">
       <button className="btn" onClick={() => { setHint(true); setFeedback("Hint: look for a forcing move by the highlighted piece."); }}>Hint</button>
       <button className="btn" onClick={() => { setRevealed(true); setFeedback(`Solution: ${line.join(" ")}`); skipped(); }}>Show solution</button>
