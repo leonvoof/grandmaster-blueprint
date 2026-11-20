@@ -5,6 +5,7 @@ import { Chess, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import { loadGameReplay } from "@/lib/game-replay";
 import { buildTrainingTree, playAnswer, startExercise, type Exercise } from "@/lib/opening-trainer";
+import { lichessCooldownKey, lichessImportLimits, LichessImportError, mergeLichessGames, requestPublicLichessGames, withSingleLichessImport, type LichessTimeControl } from "@/lib/public-lichess";
 import { decodeProgress, maxBackupBytes, puzzles, readProgress, saveProgress, validatedPgn, type PublicProgress } from "@/lib/public-progress";
 import { parsePuzzleRow } from "@/lib/tactics";
 import { StockfishAnalysis } from "@/components/stockfish-analysis";
@@ -82,7 +83,7 @@ export function PublicWorkspace({ section }: { section: "games" | "analysis" | "
   return <div className="space-y-6">
     <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
     {section === "tactics" ? <Tactics progress={progress} update={update} /> :
-      <PgnWorkspace key={section} training={section === "openings"} progress={progress} update={update} />}
+      <PgnWorkspace key={section} training={section === "openings"} lichessImport={section === "games"} progress={progress} update={update} />}
     <details className={panel}>
       <summary className="cursor-pointer font-semibold">Backup &amp; restore</summary>
       <p className="my-3 max-w-2xl text-sm text-gray-400">Saved games, opening lines, and completion counts stay in this browser. They do not sync across devices and may be lost when browser storage is cleared. Engine cache entries are temporary and are excluded from backups.</p>
@@ -96,7 +97,7 @@ export function PublicWorkspace({ section }: { section: "games" | "analysis" | "
   </div>;
 }
 
-function PgnWorkspace({ training, progress, update }: { training: boolean; progress: PublicProgress | null; update: Update }) {
+function PgnWorkspace({ training, lichessImport, progress, update }: { training: boolean; lichessImport: boolean; progress: PublicProgress | null; update: Update }) {
   const [fen, setFen] = useState(() => new Chess().fen());
   const [black, setBlack] = useState(false);
   const [source, setSource] = useState("");
@@ -105,8 +106,26 @@ function PgnWorkspace({ training, progress, update }: { training: boolean; progr
   const [cursor, setCursor] = useState(0);
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [fenInput, setFenInput] = useState("");
+  const [lichessUsername, setLichessUsername] = useState("");
+  const [lichessTimeControl, setLichessTimeControl] = useState<LichessTimeControl>("all");
+  const [lichessLimit, setLichessLimit] = useState(50);
+  const [lichessBusy, setLichessBusy] = useState(false);
+  const [lichessStatus, setLichessStatus] = useState("");
+  const [lichessError, setLichessError] = useState("");
+  const [cooldownUntil, setCooldownUntil] = useState(0);
   const entries = progress?.games.filter((game) => game.kind === (training ? "opening" : "game")) ?? [];
   const replay = loaded && !training ? loadGameReplay(loaded) : null;
+  useEffect(() => {
+    const cooldown = Number(localStorage.getItem(lichessCooldownKey));
+    if (Number.isFinite(cooldown) && cooldown > Date.now()) setCooldownUntil(cooldown);
+  }, []);
+  useEffect(() => {
+    if (!cooldownUntil) return;
+    const timer = window.setInterval(() => {
+      if (cooldownUntil <= Date.now()) { setCooldownUntil(0); window.clearInterval(timer); }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownUntil]);
   function load(pgn: string, persist: boolean) {
     try {
       const chess = validatedPgn(pgn);
@@ -151,6 +170,50 @@ function PgnWorkspace({ training, progress, update }: { training: boolean; progr
       return true;
     } catch { return false; }
   }
+  async function importFromLichess() {
+    if (lichessBusy) return;
+    setLichessBusy(true);
+    setLichessError("");
+    setLichessStatus("Connecting directly to Lichess…");
+    try {
+      await withSingleLichessImport(async () => {
+        const result = await requestPublicLichessGames({
+          username: lichessUsername,
+          timeControl: lichessTimeControl,
+          limit: lichessLimit,
+          storage: localStorage,
+          existing: readProgress(localStorage).games,
+          onProgress: (bytes) => setLichessStatus(`Downloading Lichess PGNs · ${(bytes / 1024).toFixed(0)} KB received…`),
+        });
+        if (!result.returned) {
+          setLichessStatus("No completed games matched those filters. Try another time control or username.");
+          return;
+        }
+        let summary: ReturnType<typeof mergeLichessGames> = { games: [], imported: 0, duplicates: 0, capacitySkipped: 0 };
+        const saved = update((previous) => {
+          summary = mergeLichessGames(previous.games, result.candidates);
+          return { ...previous, games: summary.games };
+        });
+        if (!saved) {
+          setLichessError("Games were downloaded but could not be saved in this browser. Existing progress was preserved. Free browser storage and try again.");
+          setLichessStatus("");
+          return;
+        }
+        if (summary.imported > 0) load(summary.games[summary.games.length - summary.imported].pgn, false);
+        const parts = [`Imported ${summary.imported} game${summary.imported === 1 ? "" : "s"}`];
+        if (summary.duplicates) parts.push(`skipped ${summary.duplicates} duplicate${summary.duplicates === 1 ? "" : "s"}`);
+        if (result.invalid) parts.push(`rejected ${result.invalid} invalid PGN${result.invalid === 1 ? "" : "s"}`);
+        if (result.overLimit) parts.push(`ignored ${result.overLimit} games beyond the selected limit`);
+        if (summary.capacitySkipped) parts.push(`could not save ${summary.capacitySkipped} because the local library is full`);
+        setLichessStatus(`${parts.join(" · ")}. Games are stored in this browser.`);
+      });
+    } catch (error) {
+      if (error instanceof LichessImportError && error.retryAt) setCooldownUntil(error.retryAt);
+      setLichessStatus("");
+      setLichessError(error instanceof Error ? error.message : "Lichess import failed. You can import a PGN file below.");
+    } finally { setLichessBusy(false); }
+  }
+  const cooldownSeconds = cooldownUntil ? Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)) : 0;
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
       <div className={panel}>
@@ -158,6 +221,36 @@ function PgnWorkspace({ training, progress, update }: { training: boolean; progr
         {!training && <StockfishAnalysis fen={fen} gameId="knightforge-public" />}
       </div>
       <div className={panel}>
+        {lichessImport && <section className="mb-6 rounded-xl border border-violet-300/20 bg-violet-300/[0.04] p-4" aria-label="Import from Lichess">
+          <h2 className="font-semibold">Import from Lichess</h2>
+          <p className="my-2 text-sm text-gray-400">Import public, completed games directly from Lichess. No KnightForge account, Lichess login, or token is needed. Games stay in this browser.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm">Lichess username
+              <input className="field mt-1 w-full" autoComplete="off" maxLength={30} value={lichessUsername} onChange={(event) => setLichessUsername(event.target.value)} placeholder="username" />
+            </label>
+            <label className="block text-sm">Time control
+              <select className="field mt-1 w-full" value={lichessTimeControl} onChange={(event) => setLichessTimeControl(event.target.value as LichessTimeControl)}>
+                <option value="all">All supported time controls</option>
+                <option value="classical">Classical</option>
+                <option value="rapid">Rapid</option>
+                <option value="blitz">Blitz</option>
+              </select>
+            </label>
+            <label className="block text-sm">Most recent games
+              <select className="field mt-1 w-full" value={lichessLimit} onChange={(event) => setLichessLimit(Number(event.target.value))}>
+                {lichessImportLimits.map((limit) => <option key={limit} value={limit}>{limit} games</option>)}
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button className="btn w-full bg-violet-400/20" type="button" disabled={!progress || lichessBusy || Boolean(cooldownSeconds)} onClick={() => void importFromLichess()}>
+                {lichessBusy ? "Importing…" : cooldownSeconds ? `Wait ${cooldownSeconds}s` : "Import Games"}
+              </button>
+            </div>
+          </div>
+          {lichessStatus && <p role="status" className="mt-3 text-sm text-violet-200">{lichessStatus}</p>}
+          {lichessError && <p role="alert" className="mt-3 text-sm text-red-300">{lichessError}</p>}
+          <p className="mt-3 text-xs leading-5 text-gray-500">Requests go from your browser directly to Lichess and are capped at your selected limit. If your network or browser blocks cross-origin access, download a PGN from Lichess and paste or open it below.</p>
+        </section>}
         <label className="block text-sm">Paste {training ? "opening line" : "game"} PGN
           <textarea className="field my-2 w-full" rows={4} maxLength={16000} value={source} onChange={(event) => setSource(event.target.value)} />
         </label>
@@ -171,10 +264,10 @@ function PgnWorkspace({ training, progress, update }: { training: boolean; progr
           if (file && file.size <= 64_000) void file.text().then((pgn) => load(pgn, false), () => setError("Could not read this PGN file."));
           else if (file) setError("PGN file exceeds the size limit.");
         }} /></label>
-        {entries.length > 0 && <label className="my-3 block text-sm">Saved PGNs
+        {entries.length > 0 && <label className="my-3 block text-sm">{training ? "Saved opening lines" : "Local game library"}
           <select className="field mt-1 w-full" value="" onChange={(event) => load(entries[Number(event.target.value)].pgn, false)}>
             <option value="" disabled>Choose a saved PGN</option>
-            {entries.map((entry, index) => <option key={index} value={index}>{entry.name}</option>)}
+            {entries.map((entry, index) => <option key={index} value={index}>{entry.name}{entry.source === "lichess" ? ` · Lichess${entry.sourceUsername ? ` @${entry.sourceUsername}` : ""}` : ""}</option>)}
           </select>
         </label>}
         {training ? <>

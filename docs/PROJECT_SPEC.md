@@ -32,7 +32,7 @@ Help a player rated approximately 1800 Lichess Classical make a deliberate, evid
 
 - **chess.js** and a maintained React chessboard component for legal move interaction and board display.
 - **Stockfish** for optional local engine review; default to local/free operation and make engine configuration visible.
-- **Lichess** for optional account/game import with explicit user authorization and secure token handling. No API secrets in browser code or committed files.
+- **Lichess private sync** uses explicit authorization and server-side token handling. The no-login public workspace may import public games directly from Lichess into the visitor's browser-local library without a token. No API secrets in browser code or committed files.
 
 ## Delivery phases
 
