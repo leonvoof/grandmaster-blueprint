@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import { moverAtPosition } from "./game-viewer-controls.ts";
 import type { ReviewPoint } from "@/lib/evaluation-review";
 
 export type MoveClassification = "Brilliant" | "Great" | "Best" | "Excellent" | "Good" | "Inaccuracy" | "Mistake" | "Blunder" | "Book";
@@ -10,7 +11,7 @@ export function classifyGameMoves(points: ReviewPoint[], thresholds: Classificat
   for (let ply = 1; ply < points.length; ply++) {
     const before = points[ply - 1], after = points[ply];
     if (!after.san) continue;
-    const color: "white" | "black" = ply % 2 ? "white" : "black";
+    const color = moverAtPosition(before.fen, ply);
     const base = { ply, san: after.san, color, lossCp: null, evaluationBefore: null, evaluationAfter: null, bestMove: null, continuation: [] as string[] };
     const a = before.analysis, b = after.analysis;
     if (!a?.score || !b?.score || a.engine !== b.engine || a.depth !== b.depth || before.settings !== after.settings) {

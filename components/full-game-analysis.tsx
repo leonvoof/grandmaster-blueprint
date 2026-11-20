@@ -10,26 +10,30 @@ import { evaluationValue, type ReviewPoint } from "@/lib/evaluation-review";
 import { findCriticalMoves } from "@/lib/evaluation-review";
 import { MistakeReviewSession } from "@/components/mistake-review-session";
 import { StockfishAnalysis } from "@/components/stockfish-analysis";
+import { moverAtPosition, moveNumberAtPosition } from "@/lib/game-viewer-controls";
 import { classifyGameMoves, summarizeClassifiedMoves, type MoveClassification } from "@/lib/game-review-classification";
 
 type Position = GamePosition;
-type Saved = { id: string; gameId: string; fen: string; ply: number; engine: string; settings: string; depth: number; scoreType: "cp" | "mate" | null; scoreValue: number | null; bestMove: string | null; variation: string; terminal: string | null };
-type Props = { gameId: string; positions: Position[]; selectedPly: number; onSelect: (ply: number) => void; onPositionAnalysis?: (analysis: Analysis | null) => void; onReviewModeChange?: (active: boolean) => void; openingName?: string; playerColor?: "white" | "black" | null };
+import { readBrowserAnalyses, saveBrowserAnalysis, type SavedAnalysis as Saved } from "@/lib/browser-game-review";
+type Props = { browserLocal?: boolean; gameId: string; positions: Position[]; selectedPly: number; onSelect: (ply: number) => void; onPositionAnalysis?: (analysis: Analysis | null, fen?: string) => void; onReviewModeChange?: (active: boolean) => void; openingName?: string; playerColor?: "white" | "black" | null };
 
 function fromSaved(saved: Saved): Analysis {
   return { engine: saved.engine, depth: saved.depth, score: saved.scoreType && saved.scoreValue !== null ? { kind: saved.scoreType, value: saved.scoreValue } : null, bestMove: saved.bestMove, variation: JSON.parse(saved.variation), ...(saved.terminal && { terminal: saved.terminal as Analysis["terminal"] }) };
 }
 
-export function FullGameAnalysis({ gameId, positions, selectedPly, onSelect, onPositionAnalysis, onReviewModeChange, openingName, playerColor }: Props) {
+export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly, onSelect, onPositionAnalysis, onReviewModeChange, openingName, playerColor }: Props) {
   const [depth, setDepth] = useState(DEFAULT_DEPTH);
   const [saved, setSaved] = useState<Saved[]>([]);
   const [results, setResults] = useState<Record<number, Analysis>>({});
+  const [ready, setReady] = useState(false);
+  const [live, setLive] = useState<{ fen: string; depth: number; analysis: Analysis } | null>(null);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(0);
   const [error, setError] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
   const [panel, setPanel] = useState<"moves" | "summary" | "graph">("moves");
   const [thresholds, setThresholds] = useState({ inaccuracy: 50, mistake: 100, blunder: 200 });
+  const liveJob = useRef<AbortController | null>(null);
   const job = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const activeMoveRef = useRef<HTMLButtonElement | null>(null);
@@ -38,24 +42,50 @@ export function FullGameAnalysis({ gameId, positions, selectedPly, onSelect, onP
   const selectedSaved = selectedPosition ? byPositionResult(activeResults, selectedPosition) : undefined;
   const selectedAnalysis = useMemo(() => selectedPosition ? results[selectedPly] ?? (selectedSaved ? fromSaved(selectedSaved) : null) : null, [results, selectedPly, selectedPosition, selectedSaved]);
 
-  useEffect(() => { onPositionAnalysis?.(selectedAnalysis); }, [onPositionAnalysis, selectedAnalysis]);
+  const visibleAnalysis = selectedAnalysis ?? (live && live.fen === selectedPosition?.fen && live.depth === depth ? live.analysis : null);
+  useEffect(() => { onPositionAnalysis?.(visibleAnalysis, selectedPosition?.fen); }, [onPositionAnalysis, visibleAnalysis, selectedPosition?.fen]);
+  useEffect(() => {
+    setLive(null);
+    if (!browserLocal || !ready || !selectedPosition || selectedAnalysis || running || reviewOpen) return;
+    const fen = selectedPosition.fen;
+    const controller = new AbortController();
+    liveJob.current = controller;
+    const key = JSON.stringify([gameId, fen, ENGINE_BUILD, ENGINE_SETTINGS, depth]);
+    const timer = window.setTimeout(async () => {
+      try {
+        const analysis = readAnalysis(key) ?? await runStockfish(fen, depth, controller.signal, () => {});
+        if (!controller.signal.aborted) { cacheAnalysis(key, analysis); setLive({ fen, depth, analysis }); }
+      } catch (reason) {
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Position analysis failed.");
+      }
+    }, 100);
+    return () => { clearTimeout(timer); controller.abort(); if (liveJob.current === controller) liveJob.current = null; };
+  }, [browserLocal, ready, selectedPosition, selectedAnalysis, running, reviewOpen, gameId, depth]);
   useEffect(() => { onReviewModeChange?.(reviewOpen); }, [onReviewModeChange, reviewOpen]);
-  useEffect(() => { activeMoveRef.current?.scrollIntoView({ block: "nearest" }); }, [selectedPly, panel]);
+  useEffect(() => { const button = activeMoveRef.current;
+    const list = button?.closest('[aria-label="Game moves"]');
+    if (button && list) {
+      const bounds = button.getBoundingClientRect();
+      const viewport = list.getBoundingClientRect();
+      if (bounds.top < viewport.top) list.scrollTop += bounds.top - viewport.top;
+      if (bounds.bottom > viewport.bottom) list.scrollTop += bounds.bottom - viewport.bottom;
+    } }, [selectedPly, panel]);
 
   useEffect(() => {
     const generationRef = generation;
     const controller = new AbortController();
     generation.current++;
-    job.current?.abort(); job.current = null; setRunning(false); setError(""); setCompleted(0); setResults({}); setSaved([]);
-    void fetch(`/api/games/${encodeURIComponent(gameId)}/analyses`, { signal: controller.signal })
-      .then(async (response) => { if (!response.ok) throw new Error("Could not load saved game analysis."); return response.json(); })
-      .then((data) => { if (!controller.signal.aborted) setSaved(data.analyses); })
+    job.current?.abort(); job.current = null; setRunning(false); setError(""); setCompleted(0); setResults({}); setSaved([]); setReady(false);
+    void (browserLocal ? readBrowserAnalyses(gameId) : fetch(`/api/games/${encodeURIComponent(gameId)}/analyses`, { signal: controller.signal })
+      .then(async (response) => { if (!response.ok) throw new Error("Could not load saved game analysis."); return response.json(); }).then((data) => data.analyses as Saved[]))
+      .then((analyses) => { if (!controller.signal.aborted) { setSaved(analyses); setReady(true); } })
       .catch((reason) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Could not load saved analysis."); });
     return () => { controller.abort(); generationRef.current++; job.current?.abort(); job.current = null; };
-  }, [gameId]);
+  }, [gameId, browserLocal]);
 
   async function analyzeGame() {
-    if (job.current) return;
+    if (job.current || !ready) return;
+    liveJob.current?.abort();
     const controller = new AbortController();
     job.current = controller;
     const currentJob = ++generation.current;
@@ -74,6 +104,11 @@ export function FullGameAnalysis({ gameId, positions, selectedPly, onSelect, onP
         save: async (position, analysis) => {
           const cacheKey = JSON.stringify([gameId, position.fen, ENGINE_BUILD, ENGINE_SETTINGS, depth]);
           cacheAnalysis(cacheKey, analysis);
+          if (browserLocal) {
+            const record = await saveBrowserAnalysis(gameId, position.ply, position.fen, ENGINE_SETTINGS, analysis, depth);
+            if (!controller.signal.aborted) setSaved((previous) => [...previous.filter((item) => item.id !== record.id), record]);
+            return;
+          }
           const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/analyses`, {
             method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
             body: JSON.stringify({ fen: position.fen, ply: position.ply, engine: ENGINE_BUILD, settings: ENGINE_SETTINGS, depth, score: analysis.score, bestMove: analysis.bestMove, variation: analysis.variation, terminal: analysis.terminal }),
@@ -98,43 +133,43 @@ export function FullGameAnalysis({ gameId, positions, selectedPly, onSelect, onP
 
   function cancel() { job.current?.abort(); job.current = null; setRunning(false); setError(""); }
   const total = positions.length;
-  const doneCount = Object.keys(results).length;
+  const doneCount = Math.max(Object.keys(results).length, activeResults.length);
   const reviewPoints: ReviewPoint[] = positions.map((position) => {
     const record = byPositionResult(activeResults, position);
     const analysis = results[position.ply] ?? (record ? fromSaved(record) : null);
     const savedPosition = byPositionResult(activeResults, position);
     return { ...position, ...evaluationValue(analysis), analysis, analysisId: savedPosition?.id, settings: savedPosition?.settings, fen: position.fen };
   });
-  const reviewableMoves = findCriticalMoves(reviewPoints, thresholds).map((move) => ({
+  const classifications = classifyGameMoves(reviewPoints, thresholds);
+  const classificationByPly = new Map(classifications.map((move) => [move.ply, move]));
+  const reviewableMoves = findCriticalMoves(reviewPoints, thresholds).filter((move) => !browserLocal || (classificationByPly.get(move.ply)?.classification === move.classification && classificationByPly.get(move.ply)?.bestMove)).map((move) => ({
     ...move,
     san: positions[move.ply]?.san ?? move.san,
     engine: reviewPoints[move.ply - 1]?.analysis?.engine,
     depth: reviewPoints[move.ply - 1]?.analysis?.depth,
   }));
-  const classifications = classifyGameMoves(reviewPoints, thresholds);
   const gameSummary = summarizeClassifiedMoves(classifications);
-  const classificationByPly = new Map(classifications.map((move) => [move.ply, move]));
-  if (reviewOpen) return <MistakeReviewSession gameId={gameId} critical={reviewableMoves} onSelect={onSelect} onExit={() => setReviewOpen(false)} openingName={openingName} playerColor={playerColor} />;
-  return <section className="flex min-h-[min(70vh,720px)] max-h-[calc(100dvh-150px)] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b] shadow-[0_18px_60px_rgba(0,0,0,0.18)]" aria-label="Full game analysis">
+  if (reviewOpen) return <MistakeReviewSession gameId={gameId} browserLocal={browserLocal} critical={reviewableMoves} onSelect={onSelect} onExit={() => setReviewOpen(false)} openingName={openingName} playerColor={playerColor} />;
+  return <section className="flex min-h-0 max-h-[max(480px,calc(100dvh-160px))] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b] shadow-[0_18px_60px_rgba(0,0,0,0.18)]" aria-label="Full game analysis">
     <header className="border-b border-white/[0.07] p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a994f0]">Game analysis</p><h2 className="mt-1 text-lg font-medium">Stockfish review</h2></div>
       <label className="flex items-center gap-2 text-xs text-gray-400">Depth<select aria-label="Analysis depth" className="rounded-lg border border-white/15 bg-[#0b0d13] px-2 py-2 text-sm text-white" value={depth} disabled={running} onChange={(event) => { setDepth(Number(event.target.value)); setResults({}); }}>{Array.from({ length: MAX_DEPTH - MIN_DEPTH + 1 }, (_, index) => index + MIN_DEPTH).map((value) => <option key={value}>{value}</option>)}</select></label>
     </div>
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      {running ? <button className="rounded-lg border border-white/15 px-3 py-2 text-sm" onClick={cancel}>Cancel game analysis</button> : <button className="rounded-lg bg-[#7655dc]/25 px-3 py-2 text-sm" disabled={!total} onClick={analyzeGame}>Analyze Entire Game</button>}
+      {running ? <button className="rounded-lg border border-white/15 px-3 py-2 text-sm" onClick={cancel}>Cancel game analysis</button> : <button className="rounded-lg bg-[#7655dc]/25 px-3 py-2 text-sm" disabled={!total || !ready} onClick={analyzeGame}>Analyze Entire Game</button>}
       <span className="text-xs text-gray-400">{activeResults.length} saved at this depth</span>
     </div>
     <p className="mt-2 text-xs text-gray-400" role="status">{running ? `${completed} / ${total} positions completed` : doneCount ? `${doneCount} / ${total} positions loaded` : `${total} positions · analysis starts on request`}</p>
     {error && <p className="mt-2 text-sm text-red-300" role="alert">{error}</p>}
     </header>
     {!reviewOpen && <div className="border-b border-white/[0.07] bg-[#0d0f16] px-4 py-3" aria-live="polite">
-      <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">Selected position · White perspective</p><p className="mt-0.5 text-xl font-semibold tabular-nums text-white">{selectedAnalysis ? selectedAnalysis.score?.kind === "mate" ? `${selectedAnalysis.score.value > 0 ? "White" : selectedAnalysis.score.value < 0 ? "Black" : ""} ${selectedAnalysis.score.value === 0 ? "Mate" : `mates in ${Math.abs(selectedAnalysis.score.value)}`}` : selectedAnalysis.score ? `${selectedAnalysis.score.value > 0 ? "+" : ""}${(selectedAnalysis.score.value / 100).toFixed(2)}` : selectedAnalysis.terminal ?? "Evaluation unavailable" : "No saved evaluation"}</p></div>
-      {selectedAnalysis?.bestMove && <div className="text-right"><p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">Best move</p><p className="mt-0.5 font-mono text-lg text-[#c7b8ff]">{selectedAnalysis.bestMove}</p></div>}</div>
+      <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">Selected position · White perspective</p><p className="mt-0.5 text-xl font-semibold tabular-nums text-white">{visibleAnalysis ? visibleAnalysis.score?.kind === "mate" ? `${visibleAnalysis.score.value > 0 ? "White" : visibleAnalysis.score.value < 0 ? "Black" : ""} ${visibleAnalysis.score.value === 0 ? "Mate" : `mates in ${Math.abs(visibleAnalysis.score.value)}`}` : visibleAnalysis.score ? `${visibleAnalysis.score.value > 0 ? "+" : ""}${(visibleAnalysis.score.value / 100).toFixed(2)}` : visibleAnalysis.terminal ?? "Evaluation unavailable" : browserLocal ? "Analyzing position…" : "No saved evaluation"}</p></div>
+      {visibleAnalysis?.bestMove && <div className="text-right"><p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">Best move</p><p className="mt-0.5 font-mono text-lg text-[#c7b8ff]">{visibleAnalysis.bestMove}</p></div>}</div>
       {classificationByPly.get(selectedPly)?.classification ? <p className={`mt-2 text-xs ${classificationColor(classificationByPly.get(selectedPly)!.classification!)}`}><strong>{classificationIcon(classificationByPly.get(selectedPly)!.classification!)} {classificationByPly.get(selectedPly)!.classification}</strong> · {classificationByPly.get(selectedPly)!.reason}</p> : selectedPly > 0 && <p className="mt-2 text-xs text-gray-500">{classificationByPly.get(selectedPly)?.reason ?? "No compatible classification evidence for this move."}</p>}
-      {selectedAnalysis?.variation.length ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-gray-300"><span className="text-gray-500">Continuation</span> · {selectedAnalysis.variation.join(" ")}</p> : <p className="mt-1 text-xs text-gray-500">{selectedAnalysis ? `Depth ${selectedAnalysis.depth} · ${selectedAnalysis.engine}` : "Analyze this game to save evaluations and engine continuations."}</p>}
+      {visibleAnalysis?.variation.length ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-gray-300"><span className="text-gray-500">Continuation</span> · {visibleAnalysis.variation.join(" ")}</p> : <p className="mt-1 text-xs text-gray-500">{visibleAnalysis ? `Depth ${visibleAnalysis.depth} · ${visibleAnalysis.engine}` : "Analyze this game to save evaluations and engine continuations."}</p>}
     </div>}
-    {!reviewOpen && <details className="border-b border-white/[0.07] px-4 py-2"><summary className="cursor-pointer text-xs font-medium text-gray-300">Analyze selected position with Stockfish</summary><StockfishAnalysis fen={selectedPosition?.fen ?? positions[0]?.fen ?? ""} gameId={gameId} /></details>}
+    {!reviewOpen && !browserLocal && <details className="border-b border-white/[0.07] px-4 py-2"><summary className="cursor-pointer text-xs font-medium text-gray-300">Analyze selected position with Stockfish</summary><StockfishAnalysis fen={selectedPosition?.fen ?? positions[0]?.fen ?? ""} gameId={gameId} /></details>}
     {!reviewOpen && <div className="flex items-center gap-1 border-b border-white/[0.07] px-3 pt-2" role="tablist" aria-label="Analysis views">
       <button role="tab" aria-selected={panel === "moves"} className={`rounded-t-lg px-3 py-2 text-xs ${panel === "moves" ? "bg-[#7655dc]/20 text-white" : "text-gray-400 hover:text-white"}`} onClick={() => setPanel("moves")}>Moves</button>
       <button role="tab" aria-selected={panel === "summary"} className={`rounded-t-lg px-3 py-2 text-xs ${panel === "summary" ? "bg-[#7655dc]/20 text-white" : "text-gray-400 hover:text-white"}`} onClick={() => setPanel("summary")}>Game review</button>
@@ -146,10 +181,11 @@ export function FullGameAnalysis({ gameId, positions, selectedPly, onSelect, onP
       const analysis = results[position.ply] ?? (byPositionResult(activeResults, position) ? fromSaved(byPositionResult(activeResults, position)!) : null);
       const evaluation = analysis?.score ? analysis.score.kind === "mate" ? `M${analysis.score.value}` : (analysis.score.value / 100).toFixed(2) : analysis?.terminal ? "Draw" : "";
       const current = selectedPly === position.ply;
+      const beforeFen = positions[position.ply - 1]?.fen;
       const critical = reviewableMoves.find((item) => item.ply === position.ply);
       const classification = classificationByPly.get(position.ply);
-      return <button ref={current ? activeMoveRef : null} key={position.ply} className={`col-span-3 grid grid-cols-[2.5rem_minmax(0,1fr)_3rem] items-center rounded-lg border px-2.5 py-2 text-left text-sm transition-colors ${current ? "border-[#a58aff]/50 bg-[#7655dc]/20 text-white" : "border-transparent text-gray-300 hover:bg-white/[0.045]"}`} onClick={() => onSelect(position.ply)} title={`Go to ${critical ? `${critical.classification}: ` : ""}position ${position.ply}`}>
-        <span className="text-[10px] tabular-nums text-gray-500">{Math.ceil(position.ply / 2)}{position.ply % 2 ? "." : "…"}</span><span className="truncate font-medium">{position.san}{classification?.classification && <span className={`ml-2 rounded px-1.5 py-0.5 text-[9px] ${classificationColor(classification.classification)} bg-white/[0.06]`} title={classification.reason}>{classificationIcon(classification.classification)} {classification.classification}</span>}</span><span className="text-right font-mono text-[10px] text-[#c7b8ff]">{evaluation}</span>
+      return <button ref={current ? activeMoveRef : null} aria-current={current ? "step" : undefined} key={position.ply} className={`col-span-3 grid grid-cols-[2.5rem_minmax(0,1fr)_3rem] items-center rounded-lg border px-2.5 py-2 text-left text-sm transition-colors ${current ? "border-[#a58aff]/50 bg-[#7655dc]/20 text-white" : "border-transparent text-gray-300 hover:bg-white/[0.045]"}`} onClick={() => onSelect(position.ply)} title={`Go to ${critical ? `${critical.classification}: ` : ""}position ${position.ply}`}>
+        <span className="text-[10px] tabular-nums text-gray-500">{moveNumberAtPosition(beforeFen, position.ply)}{moverAtPosition(beforeFen, position.ply) === "white" ? "." : "…"}</span><span className="truncate font-medium">{position.san}{classification?.classification && <span className={`ml-2 rounded px-1.5 py-0.5 text-[9px] ${classificationColor(classification.classification)} bg-white/[0.06]`} title={classification.reason}>{classificationIcon(classification.classification)} {classification.classification}</span>}</span><span className="text-right font-mono text-[10px] text-[#c7b8ff]">{evaluation}</span>
       </button>;
     })}</div>
     </div>}
@@ -176,7 +212,7 @@ function GameReviewSummary({ summary, onSelect, onReviewMistakes }: { summary: R
   return <section aria-label="Game review summary"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Game Review</h3><p className="mt-1 max-w-xl text-xs text-gray-400">Classifications use compatible saved analysis at depth 10 or higher. Excellent is ≤10 cp loss; Good is below your inaccuracy threshold. Mate scores and missing data are left unclassified.</p></div><button className="rounded-lg bg-[#7655dc]/25 px-3 py-2 text-xs hover:bg-[#7655dc]/35" onClick={onReviewMistakes}>Review My Mistakes</button></div>
     <div className="mt-4 grid gap-3 sm:grid-cols-2">{(["white", "black"] as const).map((color) => <div key={color} className="rounded-xl border border-white/[0.07] bg-black/15 p-3"><h4 className="font-medium">{color === "white" ? "White" : "Black"}</h4><div className="mt-2 grid grid-cols-3 gap-2">{labels.map((label) => <div key={label} className="rounded-lg bg-white/[0.035] px-2 py-1.5"><p className={`text-[10px] ${classificationColor(label)}`}>{label}</p><p className="text-lg font-semibold tabular-nums">{summary.byColor[color][label]}</p></div>)}</div></div>)}</div>
     <div className="mt-4 grid gap-3 sm:grid-cols-3"><SummaryCount title="Classified moves" value={summary.bestMoves.length + summary.critical.length + summary.byColor.white.Excellent + summary.byColor.black.Excellent + summary.byColor.white.Good + summary.byColor.black.Good} /><SummaryCount title="Critical positions" value={summary.critical.length} /><SummaryCount title="Missed opportunities" value={summary.missedOpportunities.length} /></div>
-    <h4 className="mt-5 text-sm font-medium">Critical positions & missed opportunities</h4>{summary.critical.length ? <div className="mt-2 space-y-1">{summary.critical.map((move) => <button key={move.ply} className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/[0.06] px-3 py-2 text-left text-sm hover:bg-white/[0.04]" onClick={() => onSelect(move.ply)}><span>{move.ply % 2 ? "White" : "Black"} · {Math.ceil(move.ply / 2)}{move.ply % 2 ? "." : "…"} {move.san} · <span className={classificationColor(move.classification!)}>{move.classification}</span></span><span className="text-xs text-gray-400">{move.lossCp} cp loss {move.bestMove ? `· best: ${move.bestMove}` : ""}</span></button>)}</div> : <p className="mt-2 text-xs text-gray-500">No classified critical positions in the compatible saved data.</p>}
+    <h4 className="mt-5 text-sm font-medium">Critical positions & missed opportunities</h4>{summary.critical.length ? <div className="mt-2 space-y-1">{summary.critical.map((move) => <button key={move.ply} className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/[0.06] px-3 py-2 text-left text-sm hover:bg-white/[0.04]" onClick={() => onSelect(move.ply)}><span>{move.color === "white" ? "White" : "Black"} · {Math.ceil(move.ply / 2)}{move.color === "white" ? "." : "…"} {move.san} · <span className={classificationColor(move.classification!)}>{move.classification}</span></span><span className="text-xs text-gray-400">{move.lossCp} cp loss {move.bestMove ? `· best: ${move.bestMove}` : ""}</span></button>)}</div> : <p className="mt-2 text-xs text-gray-500">No classified critical positions in the compatible saved data.</p>}
     <p className="mt-4 text-[10px] leading-4 text-gray-500">No proprietary accuracy percentage is calculated. Brilliant/Great and Book are withheld: saved single-PV evaluations do not provide verified deep multi-PV exceptional-move evidence or a verified opening-book source.</p>
   </section>;
 }

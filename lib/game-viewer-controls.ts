@@ -1,3 +1,12 @@
+export function moverAtPosition(fen: string | undefined, ply: number): BoardOrientation {
+  const turn = fen?.split(" ")[1];
+  return turn === "b" || (turn !== "w" && ply % 2 === 0) ? "black" : "white";
+}
+
+export function moveNumberAtPosition(fen: string | undefined, ply: number) {
+  return Number(fen?.split(" ")[5]) || Math.ceil(ply / 2);
+}
+
 export type BoardOrientation = "white" | "black";
 export type OrientationMode = BoardOrientation | "auto";
 

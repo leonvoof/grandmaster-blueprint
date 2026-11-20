@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
-import { continuationPosition, getReviewHint, mistakeReviewTargetForKey, reviewBoardOrientation, reviewPlayerColor } from "@/lib/mistake-review-ui";
-import { shouldIgnoreGameViewerShortcut, type BoardOrientation } from "@/lib/game-viewer-controls";
+import { continuationPosition, getReviewHint, mistakeReviewTargetForKey, reviewBoardOrientation } from "@/lib/mistake-review-ui";
+import { moverAtPosition, shouldIgnoreGameViewerShortcut, type BoardOrientation } from "@/lib/game-viewer-controls";
 
 type Critical = { ply: number; moveNumber: number; san: string | null; classification: string; alternative: string | null; variation: string[]; before?: number; after?: number; loss?: number; engine?: string; depth?: number; analysisId?: string; fen?: string };
+import { readBrowserReviews, saveBrowserReview } from "@/lib/browser-game-review";
+
 type EventRecord = { id: string; kind: string; submittedSan: string | null; matchedBest: boolean | null; createdAt: string };
 type Reflection = { thinking: string; overlooked: string; variations: string; learned: string; recognition: string };
 type Stored = { analysisId: string; reflection: Reflection; events: EventRecord[] };
@@ -21,9 +23,10 @@ const prompts: { key: keyof Reflection; label: string }[] = [
 ];
 
 export function MistakeReviewSession({
-  gameId, critical, onSelect, onExit, openingName, playerColor,
+  gameId, browserLocal, critical, onSelect, onExit, openingName, playerColor,
 }: {
   gameId: string;
+  browserLocal?: boolean;
   critical: Critical[];
   onSelect: (ply: number) => void;
   onExit: () => void;
@@ -43,26 +46,29 @@ export function MistakeReviewSession({
   const [reflection, setReflection] = useState<Reflection>(blank);
   const [reflectionDirty, setReflectionDirty] = useState(false);
   const [status, setStatus] = useState("");
+  const [historyReady, setHistoryReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [orientationMode, setOrientationMode] = useState<"auto" | BoardOrientation>("auto");
   const [sessionStartedAt] = useState(() => Date.now());
 
   useEffect(() => {
     let active = true;
-    void fetch(`/api/games/${encodeURIComponent(gameId)}/reviews`).then(async (response) => {
+    void (browserLocal ? readBrowserReviews(gameId) : fetch(`/api/games/${encodeURIComponent(gameId)}/reviews`).then(async (response) => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not load review history.");
+      return data.reviews as Stored[];
+    })).then((reviews) => {
       if (!active) return;
       const next: Record<string, Stored> = {};
-      for (const item of data.reviews as Stored[]) next[item.analysisId] = item;
-      setStored(next);
+      for (const item of reviews) next[item.analysisId] = item;
+      setStored(next); setHistoryReady(true);
     }).catch((error) => { if (active) setStatus(error instanceof Error ? error.message : "Could not load review history."); });
     return () => { active = false; };
-  }, [gameId]);
+  }, [gameId, browserLocal]);
 
   const candidates = useMemo(() => critical.filter((item) => {
     if (!item.analysisId || !item.fen || !item.san) return false;
-    const side = reviewPlayerColor(item.ply);
+    const side = moverAtPosition(item.fen, item.ply);
     if (color === "both") return true;
     if (color === "mine") return playerColor === side;
     return color === side;
@@ -71,7 +77,7 @@ export function MistakeReviewSession({
   const currentStored = current?.analysisId ? stored[current.analysisId] : undefined;
   const events = currentStored?.events ?? [];
   const position = current?.fen ?? new Chess().fen();
-  const moverColor = current ? reviewPlayerColor(current.ply) : null;
+  const moverColor = current ? moverAtPosition(current.fen, current.ply) : null;
   const orientation = reviewBoardOrientation(orientationMode, moverColor);
   const continuation = useMemo(() => current ? (current.variation.length ? current.variation : current.alternative ? [current.alternative] : []) : [], [current]);
   const playedFen = useMemo(() => {
@@ -118,7 +124,7 @@ export function MistakeReviewSession({
     if (current) onSelect(Math.max(0, current.ply - 1));
     // Review selection intentionally navigates the parent game position to the pre-move ply.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.analysisId, current?.ply]);
+  }, [current?.analysisId, current?.ply, historyReady]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -134,15 +140,17 @@ export function MistakeReviewSession({
   }, [index, candidates.length, navigate, onExit, reflectionDirty, reflection, busy]);
 
   async function save(action: string, extra: Record<string, unknown> = {}) {
-    if (!current?.analysisId || busy) return null;
+    if (!current?.analysisId || busy || !historyReady) return null;
     setBusy(true); setStatus("");
     try {
-      const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/reviews`, {
+      const data = browserLocal ? await saveBrowserReview(gameId, current.analysisId, position, current.alternative, action, extra) : await fetch(`/api/games/${encodeURIComponent(gameId)}/reviews`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, analysisId: current.analysisId, ...extra }),
+      }).then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error ?? "Could not save review.");
+        return result;
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not save review.");
       if (data.type === "event") {
         setStored((previous) => {
           const old = previous[current.analysisId!] ?? { analysisId: current.analysisId!, reflection: blank, events: [] };
@@ -162,7 +170,7 @@ export function MistakeReviewSession({
   }
 
   function drop(from: string, to: string) {
-    if (revealed || busy || !current) return false;
+    if (revealed || busy || !historyReady || !current) return false;
     try {
       const chess = new Chess(position);
       const result = chess.move({ from, to, promotion: "q" });
@@ -228,7 +236,7 @@ export function MistakeReviewSession({
   const engineEvaluation = typeof current?.before === "number" ? `${current.before > 0 ? "+" : ""}${current.before.toFixed(2)} → ${typeof current.after === "number" ? `${current.after > 0 ? "+" : ""}${current.after.toFixed(2)}` : "unavailable"}${current.engine ? ` · ${current.engine}` : ""}${current.depth ? ` depth ${current.depth}` : ""}` : "Unavailable in saved compatible analysis";
   const moverName = moverColor === "white" ? "White" : "Black";
 
-  return <section className="mx-auto flex min-h-[min(82vh,900px)] max-h-[calc(100dvh-140px)] w-full max-w-[1280px] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#10121a] shadow-[0_24px_80px_rgba(0,0,0,0.3)]" aria-label="Mistake review workspace">
+  return <section className="mx-auto flex min-h-[min(82vh,900px)] xl:max-h-[calc(100dvh-140px)] w-full max-w-[1280px] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#10121a] shadow-[0_24px_80px_rgba(0,0,0,0.3)]" aria-label="Mistake review workspace">
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3 sm:px-6">
       <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#b19cff]">Post-game lesson</p><h2 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">Review My Mistakes</h2><p className="mt-1 truncate text-xs text-gray-400">{openingName || "Opening unavailable"} · {candidates.length ? `${progress} of ${candidates.length} positions` : "No reviewable positions"}</p></div>
       <div className="flex items-center gap-2"><label className="hidden items-center gap-2 text-xs text-gray-400 sm:flex">Review<select aria-label="Moves to review" className="rounded-lg border border-white/10 bg-[#0b0d13] px-2.5 py-2 text-xs text-white" value={color} onChange={(event) => void changeFilter(event.target.value as ReviewColor)}><option value="both">Both players</option>{playerColor && <option value="mine">My moves</option>}<option value="white">White</option><option value="black">Black</option></select></label><button className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-300 transition hover:bg-white/[0.06]" onClick={() => void exitWithSave()}>Exit Review</button></div>
@@ -258,7 +266,7 @@ export function MistakeReviewSession({
           <div className="mt-4 rounded-xl border border-white/[0.07] bg-black/15 p-3"><p className="text-[10px] uppercase tracking-wide text-gray-500">Your candidate</p><p className="mt-1 text-lg font-semibold">{move || "Select a legal move on the board"}</p>{!revealed && <p className="mt-1 text-xs text-gray-500">The saved answer stays hidden until you submit or reveal it.</p>}</div>
 
           {!revealed ? <>
-            <div className="mt-4 flex flex-wrap gap-2"><button className="flex-1 rounded-lg bg-[#7655dc]/35 px-4 py-3 text-sm font-semibold transition hover:bg-[#7655dc]/45 disabled:cursor-not-allowed disabled:opacity-40" disabled={!move || busy} onClick={submit}>{busy ? "Saving…" : "Submit Move"}</button><button className="rounded-lg border border-white/10 px-3 py-3 text-sm hover:bg-white/[0.05]" disabled={busy || Boolean(hint)} onClick={requestHint}>Show Hint</button><button className="rounded-lg border border-amber-300/20 px-3 py-3 text-sm text-amber-100 hover:bg-amber-300/[0.06]" disabled={busy} onClick={reveal}>Reveal Answer</button></div>
+            <div className="mt-4 flex flex-wrap gap-2"><button className="flex-1 rounded-lg bg-[#7655dc]/35 px-4 py-3 text-sm font-semibold transition hover:bg-[#7655dc]/45 disabled:cursor-not-allowed disabled:opacity-40" disabled={!move || busy || !historyReady} onClick={submit}>{busy ? "Saving…" : "Submit Move"}</button><button className="rounded-lg border border-white/10 px-3 py-3 text-sm hover:bg-white/[0.05]" disabled={busy || !historyReady || Boolean(hint)} onClick={requestHint}>Show Hint</button><button className="rounded-lg border border-amber-300/20 px-3 py-3 text-sm text-amber-100 hover:bg-amber-300/[0.06]" disabled={busy || !historyReady} onClick={reveal}>Reveal Answer</button></div>
             {move && <button className="mt-2 self-start text-xs text-gray-500 underline decoration-white/20 underline-offset-2" onClick={() => { setMove(""); setCandidateFen(null); }}>Clear candidate move</button>}
             {hint && <p className="mt-3 rounded-lg border border-[#a58aff]/15 bg-[#7655dc]/[0.08] p-3 text-sm text-[#d9ceff]" role="status">Hint · {hint}</p>}
           </> : <>
@@ -267,7 +275,7 @@ export function MistakeReviewSession({
           </>}
 
           {status && <p role="status" className={`mt-3 text-xs ${status.includes("saved") ? "text-emerald-300" : "text-rose-300"}`}>{status}</p>}
-          <details className="mt-4 rounded-xl border border-white/[0.07] bg-black/10"><summary className="cursor-pointer px-3 py-3 text-sm font-medium text-gray-200">Personal reflection <span className="ml-1 text-xs font-normal text-gray-500">{reflectionDirty ? "· unsaved changes" : currentStored?.reflection && Object.values(currentStored.reflection).some(Boolean) ? "· saved notes" : "· optional"}</span></summary><div className="grid gap-3 border-t border-white/[0.06] p-3 sm:grid-cols-2">{prompts.map(({ key, label }) => <label key={key} className="text-xs leading-5 text-gray-400">{label}<textarea className="field mt-1.5 min-h-20 w-full resize-y text-sm" value={reflection[key]} onChange={(event) => { setReflection((old) => ({ ...old, [key]: event.target.value })); setReflectionDirty(true); }} /></label>)}<button className="rounded-lg border border-[#a58aff]/20 px-3 py-2 text-sm text-[#ded5ff] hover:bg-[#7655dc]/10 sm:col-span-2" disabled={busy} onClick={saveNotes}>{busy ? "Saving…" : "Save reflection"}</button></div></details>
+          <details className="mt-4 rounded-xl border border-white/[0.07] bg-black/10"><summary className="cursor-pointer px-3 py-3 text-sm font-medium text-gray-200">Personal reflection <span className="ml-1 text-xs font-normal text-gray-500">{reflectionDirty ? "· unsaved changes" : currentStored?.reflection && Object.values(currentStored.reflection).some(Boolean) ? "· saved notes" : "· optional"}</span></summary><div className="grid gap-3 border-t border-white/[0.06] p-3 sm:grid-cols-2">{prompts.map(({ key, label }) => <label key={key} className="text-xs leading-5 text-gray-400">{label}<textarea className="field mt-1.5 min-h-20 w-full resize-y text-sm" maxLength={4000} disabled={!historyReady} value={reflection[key]} onChange={(event) => { setReflection((old) => ({ ...old, [key]: event.target.value })); setReflectionDirty(true); }} /></label>)}<button className="rounded-lg border border-[#a58aff]/20 px-3 py-2 text-sm text-[#ded5ff] hover:bg-[#7655dc]/10 sm:col-span-2" disabled={busy || !historyReady} onClick={saveNotes}>{busy ? "Saving…" : "Save reflection"}</button></div></details>
 
           {events.length > 0 && <details className="mt-3 rounded-xl border border-white/[0.07] px-3"><summary className="cursor-pointer py-3 text-xs text-gray-400">Saved position history · {events.length} events</summary><ul className="space-y-2 border-t border-white/[0.06] py-3 text-xs text-gray-400">{events.map((event) => <li key={event.id}>{new Date(event.createdAt).toLocaleString()} · {event.kind === "reveal" ? "Answer revealed" : event.kind === "hint" ? "Hint requested" : `Submitted ${event.submittedSan}${event.matchedBest === true ? " · matched recommendation" : event.matchedBest === false ? " · differed; quality not assessed" : ""}`}</li>)}</ul></details>}
         </div>

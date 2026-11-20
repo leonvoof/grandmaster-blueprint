@@ -55,7 +55,7 @@ export function AppShell({ children, publicMode }: { children: React.ReactNode; 
           <div className="flex items-center gap-3"><button aria-label="Open navigation" className="text-[#aaa7b4] lg:hidden" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><span className="text-[12px] text-[#777582]">Workspace</span><span className="text-[#4e4c57]">/</span><span className="text-[12px] text-[#d3d0db]">{active?.label ?? "Dashboard"}</span></div>
           {!publicMode && <LogoutButton />}
         </header>
-        <main className="mx-auto w-full max-w-[1440px] px-5 pb-14 pt-8 sm:px-8 lg:px-10">{children}</main>
+        <main className={`mx-auto w-full max-w-[1440px] pb-14 ${publicMode && (pathname === "/games" || pathname === "/analysis") ? "px-3 pt-4 sm:px-6" : "px-5 pt-8 sm:px-8 lg:px-10"}`}>{children}</main>
       </div>
     </div>
   );

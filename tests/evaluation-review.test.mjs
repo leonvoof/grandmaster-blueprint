@@ -15,3 +15,13 @@ test("handles White/Black perspectives, mates, gaps, thresholds, and before-move
  assert.equal(findCriticalMoves([points[0],points[3]],{inaccuracy:50,mistake:100,blunder:200}).length,0);
  assert.equal(findCriticalMoves([{...points[0],settings:"threads=1"},{...points[1],settings:"threads=2"}],{inaccuracy:50,mistake:100,blunder:200}).length,0);
 });
+
+test("uses the starting FEN to classify a Black first move and keep PGN numbering", () => {
+ const start = { ply: 0, san: null, analysis: analysis(-100), fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 7" };
+ const after = { ply: 1, san: "e5", analysis: analysis(120) };
+ const [move] = findCriticalMoves([start, after], { inaccuracy: 50, mistake: 100, blunder: 200 });
+ assert.equal(move.color, "black");
+ assert.equal(move.moveNumber, 7);
+ assert.equal(move.san, "e5");
+ assert.equal(move.classification, "Blunder");
+});

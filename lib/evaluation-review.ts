@@ -1,3 +1,4 @@
+import { moveNumberAtPosition, moverAtPosition } from "./game-viewer-controls.ts";
 import type { Analysis } from "@/lib/stockfish/position";
 
 export type ReviewPoint = { ply: number; evaluation: number | null; mate: number | null; san: string | null; analysis: Analysis | null; analysisId?: string; settings?: string; fen?: string };
@@ -19,10 +20,11 @@ export function findCriticalMoves(points: ReviewPoint[], thresholds: { inaccurac
     if (!before.analysis?.score || !after.analysis?.score || before.analysis.engine !== after.analysis.engine || before.analysis.depth !== after.analysis.depth || before.settings !== after.settings || !after.san) continue;
     const a = before.analysis.score, b = after.analysis.score;
     if (a.kind !== "cp" || b.kind !== "cp") continue;
-    const loss = ply % 2 === 1 ? a.value - b.value : b.value - a.value;
+    const color = moverAtPosition(before.fen, ply);
+    const loss = color === "white" ? a.value - b.value : b.value - a.value;
     if (loss <= 0) continue;
     const classification = classifyLoss(loss, thresholds);
-    if (classification !== "Acceptable") critical.push({ ply, moveNumber: Math.ceil(ply / 2), san: before.san, before: a.value / 100, after: b.value / 100, loss: loss / 100, classification, alternative: before.analysis.bestMove, variation: before.analysis.variation, analysisId: before.analysisId, fen: before.fen });
+    if (classification !== "Acceptable") critical.push({ ply, moveNumber: moveNumberAtPosition(before.fen, ply), color, san: after.san, before: a.value / 100, after: b.value / 100, loss: loss / 100, classification, alternative: before.analysis.bestMove, variation: before.analysis.variation, analysisId: before.analysisId, fen: before.fen });
   }
   return critical;
 }

@@ -3,12 +3,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Chess, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
-import { loadGameReplay } from "@/lib/game-replay";
+import { GameViewer } from "@/components/game-viewer";
+import { exportBrowserReviews, restoreBrowserReviews } from "@/lib/browser-game-review";
 import { buildTrainingTree, playAnswer, startExercise, type Exercise } from "@/lib/opening-trainer";
 import { lichessCooldownKey, lichessImportLimits, LichessImportError, mergeLichessGames, requestPublicLichessGames, withSingleLichessImport, type LichessTimeControl } from "@/lib/public-lichess";
-import { decodeProgress, maxBackupBytes, puzzles, readProgress, saveProgress, validatedPgn, type PublicProgress } from "@/lib/public-progress";
+import { decodeProgress, maxBackupBytes, puzzles, readProgress, saveProgress, validatedPgn, type PublicProgress, type PublicGame } from "@/lib/public-progress";
 import { parsePuzzleRow } from "@/lib/tactics";
-import { StockfishAnalysis } from "@/components/stockfish-analysis";
+
 
 const panel = "rounded-2xl border border-white/10 bg-[#11131b] p-4 sm:p-6";
 type Move = { from: Square; to: Square; promotion?: string };
@@ -42,6 +43,7 @@ function Board({ fen, move, black = false }: { fen: string; move: (move: Move) =
 export function PublicWorkspace({ section }: { section: "games" | "analysis" | "openings" | "tactics" }) {
   const [progress, setProgress] = useState<PublicProgress | null>(null);
   const [message, setMessage] = useState("");
+  const [restoreVersion, setRestoreVersion] = useState(0);
   useEffect(() => {
     function refresh() {
       try { setProgress(readProgress(localStorage)); }
@@ -65,47 +67,53 @@ export function PublicWorkspace({ section }: { section: "games" | "analysis" | "
     if (!file) return;
     try {
       if (file.size > maxBackupBytes) throw new Error("Backup exceeds the size limit.");
-      const data = decodeProgress(await file.text());
+      const text = await file.text();
+      const data = decodeProgress(text);
       if (!window.confirm("Replace the public workspace progress in this browser with this backup?")) return;
-      setProgress(saveProgress(localStorage, data));
+      await restoreBrowserReviews(JSON.parse(text).gameReview, () => { saveProgress(localStorage, data); });
+      setProgress(data);
+      setRestoreVersion((version) => version + 1);
       setMessage("Backup restored.");
     } catch { setMessage("Could not restore this file. Existing progress was preserved."); }
   }
-  function download() {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(progress, null, 0)], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "knightforge-progress.json";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  async function download() {
+    if (!progress) return;
+    try {
+      const gameReview = await exportBrowserReviews();
+      const blob = new Blob([JSON.stringify({ ...progress, gameReview })], { type: "application/json" });
+      if (blob.size > maxBackupBytes) throw new Error("The complete backup exceeds 4 MB.");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = "knightforge-progress.json"; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not export the browser backup."); }
   }
   const title = { games: "Games", analysis: "Analysis board", openings: "Opening recall", tactics: "Tactics" }[section];
   return <div className="space-y-6">
-    <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
+    <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
     {section === "tactics" ? <Tactics progress={progress} update={update} /> :
-      <PgnWorkspace key={section} training={section === "openings"} lichessImport={section === "games"} progress={progress} update={update} />}
+      <PgnWorkspace key={section} training={section === "openings"} lichessImport={section === "games"} progress={progress} update={update} restoreVersion={restoreVersion} />}
     <details className={panel}>
       <summary className="cursor-pointer font-semibold">Backup &amp; restore</summary>
-      <p className="my-3 max-w-2xl text-sm text-gray-400">Saved games, opening lines, and completion counts stay in this browser. They do not sync across devices and may be lost when browser storage is cleared. Engine cache entries are temporary and are excluded from backups.</p>
+      <p className="my-3 max-w-2xl text-sm text-gray-400">Saved games, game reviews, reflections, opening lines, and completion counts stay in this browser. They do not sync across devices and may be lost when browser storage is cleared. Engine cache entries are temporary and are excluded from backups.</p>
       <div className="flex flex-wrap items-center gap-4">
         <button className="btn" disabled={!progress} onClick={download}>Download progress</button>
         <label className="text-sm">Restore progress <input type="file" accept=".json,application/json" onChange={(event) => { void restore(event.target.files?.[0]); event.target.value = ""; }} /></label>
       </div>
     </details>
     {message && <p role="status" className="text-sm text-violet-200">{message}</p>}
-    <p className="text-sm text-gray-400">Account sync, private game reviews, server-saved analyses, repertoire notes, spaced repetition, and profile statistics are available only in the authenticated workspace.</p>
+    <p className="text-sm text-gray-400">Account sync, repertoire notes, spaced repetition, and profile statistics are available in the authenticated workspace.</p>
   </div>;
 }
 
-function PgnWorkspace({ training, lichessImport, progress, update }: { training: boolean; lichessImport: boolean; progress: PublicProgress | null; update: Update }) {
+function PgnWorkspace({ training, lichessImport, progress, update, restoreVersion }: { training: boolean; lichessImport: boolean; progress: PublicProgress | null; update: Update; restoreVersion: number }) {
   const [fen, setFen] = useState(() => new Chess().fen());
   const [black, setBlack] = useState(false);
   const [source, setSource] = useState("");
   const [loaded, setLoaded] = useState("");
   const [error, setError] = useState("");
-  const [cursor, setCursor] = useState(0);
+  const [imported, setImported] = useState<PublicGame | null>(null);
   const [exercise, setExercise] = useState<Exercise | null>(null);
-  const [fenInput, setFenInput] = useState("");
   const [lichessUsername, setLichessUsername] = useState("");
   const [lichessTimeControl, setLichessTimeControl] = useState<LichessTimeControl>("all");
   const [lichessLimit, setLichessLimit] = useState(50);
@@ -114,7 +122,6 @@ function PgnWorkspace({ training, lichessImport, progress, update }: { training:
   const [lichessError, setLichessError] = useState("");
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const entries = progress?.games.filter((game) => game.kind === (training ? "opening" : "game")) ?? [];
-  const replay = loaded && !training ? loadGameReplay(loaded) : null;
   useEffect(() => {
     const cooldown = Number(localStorage.getItem(lichessCooldownKey));
     if (Number.isFinite(cooldown) && cooldown > Date.now()) setCooldownUntil(cooldown);
@@ -134,7 +141,6 @@ function PgnWorkspace({ training, lichessImport, progress, update }: { training:
       setSource(clean);
       setExercise(null);
       setError("");
-      setCursor(0);
       setFen(chess.history({ verbose: true })[0].before);
       if (persist) {
         const headers = chess.getHeaders();
@@ -143,11 +149,6 @@ function PgnWorkspace({ training, lichessImport, progress, update }: { training:
           ? data : { ...data, games: [...data.games, { pgn: clean, name, kind: training ? "opening" : "game" }] });
       }
     } catch { setError("Use one valid PGN with legal moves and at least one half-move."); }
-  }
-  function selectPly(ply: number) {
-    if (!replay) return;
-    setCursor(ply);
-    setFen(replay.moves[ply - 1]?.fen ?? replay.initialFen);
   }
   function start() {
     const { roots } = buildTrainingTree([{ pgn: loaded }]);
@@ -163,12 +164,7 @@ function PgnWorkspace({ training, lichessImport, progress, update }: { training:
       if (result.accepted && result.state.status === "complete") update((data) => ({ ...data, recalls: data.recalls + 1 }));
       return result.accepted;
     }
-    try {
-      const position = new Chess(fen);
-      position.move(input);
-      setFen(position.fen());
-      return true;
-    } catch { return false; }
+    return false;
   }
   async function importFromLichess() {
     if (lichessBusy) return;
@@ -199,7 +195,7 @@ function PgnWorkspace({ training, lichessImport, progress, update }: { training:
           setLichessStatus("");
           return;
         }
-        if (summary.imported > 0) load(summary.games[summary.games.length - summary.imported].pgn, false);
+        if (summary.imported > 0) setImported(summary.games[summary.games.length - summary.imported]);
         const parts = [`Imported ${summary.imported} game${summary.imported === 1 ? "" : "s"}`];
         if (summary.duplicates) parts.push(`skipped ${summary.duplicates} duplicate${summary.duplicates === 1 ? "" : "s"}`);
         if (result.invalid) parts.push(`rejected ${result.invalid} invalid PGN${result.invalid === 1 ? "" : "s"}`);
@@ -214,14 +210,13 @@ function PgnWorkspace({ training, lichessImport, progress, update }: { training:
     } finally { setLichessBusy(false); }
   }
   const cooldownSeconds = cooldownUntil ? Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000)) : 0;
-  return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
-      <div className={panel}>
-        <Board fen={exercise?.position.fen ?? fen} move={move} black={black} />
-        {!training && <StockfishAnalysis fen={fen} gameId="knightforge-public" />}
-      </div>
-      <div className={panel}>
-        {lichessImport && <section className="mb-6 rounded-xl border border-violet-300/20 bg-violet-300/[0.04] p-4" aria-label="Import from Lichess">
+  if (!training) return <GameViewer key={restoreVersion} local={{
+    games: entries,
+    imported,
+    restoreVersion,
+    save: (pgn, name) => update((data) => data.games.some((game) => game.kind === "game" && game.pgn === pgn)
+      ? data : { ...data, games: [...data.games, { pgn, name, kind: "game" }] }),
+    importPanel: lichessImport && <section className="mb-6 rounded-xl border border-violet-300/20 bg-violet-300/[0.04] p-4" aria-label="Import from Lichess">
           <h2 className="font-semibold">Import from Lichess</h2>
           <p className="my-2 text-sm text-gray-400">Import public, completed games directly from Lichess. No KnightForge account, Lichess login, or token is needed. Games stay in this browser.</p>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -250,7 +245,15 @@ function PgnWorkspace({ training, lichessImport, progress, update }: { training:
           {lichessStatus && <p role="status" className="mt-3 text-sm text-violet-200">{lichessStatus}</p>}
           {lichessError && <p role="alert" className="mt-3 text-sm text-red-300">{lichessError}</p>}
           <p className="mt-3 text-xs leading-5 text-gray-500">Requests go from your browser directly to Lichess and are capped at your selected limit. If your network or browser blocks cross-origin access, download a PGN from Lichess and paste or open it below.</p>
-        </section>}
+        </section>,
+  }} />;
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
+      <div className={panel}>
+        <Board fen={exercise?.position.fen ?? fen} move={move} black={black} />
+      </div>
+      <div className={panel}>
+
         <label className="block text-sm">Paste {training ? "opening line" : "game"} PGN
           <textarea className="field my-2 w-full" rows={4} maxLength={16000} value={source} onChange={(event) => setSource(event.target.value)} />
         </label>
@@ -270,26 +273,10 @@ function PgnWorkspace({ training, lichessImport, progress, update }: { training:
             {entries.map((entry, index) => <option key={index} value={index}>{entry.name}{entry.source === "lichess" ? ` · Lichess${entry.sourceUsername ? ` @${entry.sourceUsername}` : ""}` : ""}</option>)}
           </select>
         </label>}
-        {training ? <>
           <p className="mb-2 text-sm text-gray-400">Recall the main line of a PGN you provide. Completed runs in this browser: {progress?.recalls ?? "—"}.</p>
           <label className="text-sm">Practice as <select className="field" value={black ? "black" : "white"} onChange={(event) => { setBlack(event.target.value === "black"); setExercise(null); }}><option value="white">White</option><option value="black">Black</option></select></label>
           <button className="btn ml-2" disabled={!loaded} onClick={start}>Start recall</button>
           <p role="status" className="mt-3 text-sm">{exercise?.status === "complete" ? "Line complete." : exercise?.feedback}</p>
-        </> : <>
-          <div className="my-3 flex flex-wrap gap-2">
-            <button className="btn" onClick={() => { setLoaded(""); setFen(new Chess().fen()); setError(""); }}>Reset board</button>
-            <button className="btn" onClick={() => setBlack(!black)}>Flip board</button>
-          </div>
-          <label className="block text-sm">Position FEN <input className="field my-2 w-full" maxLength={150} value={fenInput} onChange={(event) => setFenInput(event.target.value)} /></label>
-          <button className="btn" onClick={() => {
-            try { setFen(new Chess(fenInput).fen()); setLoaded(""); setError(""); }
-            catch { setError("Enter a legal FEN."); }
-          }}>Load FEN</button>
-          {replay && <div className="mt-4 max-h-48 overflow-auto" aria-label="Game moves">
-            <button className="btn" onClick={() => selectPly(0)}>Start</button>
-            {replay.moves.map(({ san }, i) => <button className="btn m-0.5" aria-pressed={cursor === i + 1} key={i} onClick={() => selectPly(i + 1)}>{i + 1}. {san}</button>)}
-          </div>}
-        </>}
         {error && <p role="alert" className="mt-3 text-sm text-red-300">{error}</p>}
       </div>
     </div>

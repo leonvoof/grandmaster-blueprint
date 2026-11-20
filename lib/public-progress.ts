@@ -23,7 +23,7 @@ export function validatedPgn(value: unknown) {
 }
 
 export function decodeProgress(json: string): PublicProgress {
-  if (new TextEncoder().encode(json).length > maxBackupBytes) throw new Error("Backup exceeds the 256 KB limit.");
+  if (new TextEncoder().encode(json).length > maxBackupBytes) throw new Error("Backup exceeds the 4 MB limit.");
   const value: unknown = JSON.parse(json);
   if (!record(value) || value.version !== 1 || !Array.isArray(value.games) || value.games.length > maxGames
     || !count(value.recalls) || !record(value.solves)) throw new Error("Invalid KnightForge backup.");
