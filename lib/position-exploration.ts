@@ -1,5 +1,5 @@
 import { Chess } from "chess.js";
-import type { ClassificationThresholds, ClassifiedMove } from "@/lib/game-review-classification";
+import { classifyEvaluationMove, MIN_CLASSIFICATION_DEPTH, type ClassificationThresholds, type ClassifiedMove } from "@/lib/game-review-classification";
 import type { Analysis } from "@/lib/stockfish/position";
 
 export type ExplorationMove = { san: string; fen: string; from: string; to: string; promotion?: string | null };
@@ -77,23 +77,12 @@ export function explorationPath(tree: ExplorationTree, id = tree.currentId): Exp
   return path;
 }
 
-export function classifyExplorationMove(before: ExplorationNode, after: ExplorationNode, beforeAnalysis: Analysis | null, afterAnalysis: Analysis | null, thresholds: ClassificationThresholds, minimumDepth = 6): ClassifiedMove | null {
-  if (!after.san || !beforeAnalysis?.score || !afterAnalysis?.score || beforeAnalysis.engine !== afterAnalysis.engine || beforeAnalysis.depth !== afterAnalysis.depth || beforeAnalysis.depth < minimumDepth || beforeAnalysis.score.kind !== "cp" || afterAnalysis.score.kind !== "cp") return null;
+export function classifyExplorationMove(before: ExplorationNode, after: ExplorationNode, beforeAnalysis: Analysis | null, afterAnalysis: Analysis | null, thresholds: ClassificationThresholds, minimumDepth = MIN_CLASSIFICATION_DEPTH): ClassifiedMove | null {
+  if (!after.san || after.parentId !== before.id) return null;
   try {
-    const replay = new Chess(before.fen);
-    const legalVariation = beforeAnalysis.variation.map((san) => replay.move(san).san);
-    const played = new Chess(before.fen).move({ from: after.from!, to: after.to!, promotion: after.promotion ?? "q" }).san;
-    const lossCp = new Chess(before.fen).turn() === "w" ? beforeAnalysis.score.value - afterAnalysis.score.value : afterAnalysis.score.value - beforeAnalysis.score.value;
-    const evaluationBefore = beforeAnalysis.score.value / 100;
-    const evaluationAfter = afterAnalysis.score.value / 100;
-    let classification: ClassifiedMove["classification"];
-    let reason: string;
-    if (legalVariation[0] === played) { classification = "Best"; reason = "Matches the first legal move in the saved pre-move principal variation."; }
-    else if (lossCp >= thresholds.blunder) { classification = "Blunder"; reason = `Lost ${lossCp} cp from the mover's perspective (blunder threshold ${thresholds.blunder} cp).`; }
-    else if (lossCp >= thresholds.mistake) { classification = "Mistake"; reason = `Lost ${lossCp} cp from the mover's perspective (mistake threshold ${thresholds.mistake} cp).`; }
-    else if (lossCp >= thresholds.inaccuracy) { classification = "Inaccuracy"; reason = `Lost ${lossCp} cp from the mover's perspective (inaccuracy threshold ${thresholds.inaccuracy} cp).`; }
-    else if (lossCp <= 10) { classification = "Excellent"; reason = `Evaluation loss was ${lossCp} cp, within the 10 cp Excellent band.`; }
-    else { classification = "Good"; reason = `Evaluation loss was ${lossCp} cp, below the configured inaccuracy threshold.`; }
-    return { ply: after.ply, san: after.san, color: new Chess(before.fen).turn() === "w" ? "white" : "black", classification, lossCp, evaluationBefore, evaluationAfter, bestMove: legalVariation[0] ?? null, continuation: legalVariation, reason };
+    const chess = new Chess(before.fen);
+    const color = chess.turn() === "w" ? "white" : "black";
+    const assessment = classifyEvaluationMove({ fen: before.fen, played: after.san, before: beforeAnalysis, after: afterAnalysis, thresholds, minimumDepth });
+    return assessment.classification ? { ply: after.ply, san: after.san, color, ...assessment } : null;
   } catch { return null; }
 }

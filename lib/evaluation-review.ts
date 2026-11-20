@@ -1,30 +1,16 @@
-import { moveNumberAtPosition, moverAtPosition } from "./game-viewer-controls.ts";
+import { moveNumberAtPosition } from "./game-viewer-controls.ts";
 import type { Analysis } from "@/lib/stockfish/position";
+import { classifyGameMoves, type ClassificationThresholds } from "./game-review-classification.ts";
 
 export type ReviewPoint = { ply: number; evaluation: number | null; mate: number | null; san: string | null; analysis: Analysis | null; analysisId?: string; settings?: string; fen?: string };
-export type Classification = "Acceptable" | "Inaccuracy" | "Mistake" | "Blunder";
-export function classifyLoss(loss: number, thresholds: { inaccuracy: number; mistake: number; blunder: number }): Classification {
-  if (loss >= thresholds.blunder) return "Blunder";
-  if (loss >= thresholds.mistake) return "Mistake";
-  if (loss >= thresholds.inaccuracy) return "Inaccuracy";
-  return "Acceptable";
-}
 export function evaluationValue(analysis: Analysis | null) {
   if (!analysis?.score) return { evaluation: null, mate: null };
   return analysis.score.kind === "cp" ? { evaluation: analysis.score.value / 100, mate: null } : { evaluation: null, mate: analysis.score.value };
 }
-export function findCriticalMoves(points: ReviewPoint[], thresholds: { inaccuracy: number; mistake: number; blunder: number }) {
-  const critical = [];
-  for (let ply = 1; ply < points.length; ply++) {
-    const before = points[ply - 1], after = points[ply];
-    if (!before.analysis?.score || !after.analysis?.score || before.analysis.engine !== after.analysis.engine || before.analysis.depth !== after.analysis.depth || before.settings !== after.settings || !after.san) continue;
-    const a = before.analysis.score, b = after.analysis.score;
-    if (a.kind !== "cp" || b.kind !== "cp") continue;
-    const color = moverAtPosition(before.fen, ply);
-    const loss = color === "white" ? a.value - b.value : b.value - a.value;
-    if (loss <= 0) continue;
-    const classification = classifyLoss(loss, thresholds);
-    if (classification !== "Acceptable") critical.push({ ply, moveNumber: moveNumberAtPosition(before.fen, ply), color, san: after.san, before: a.value / 100, after: b.value / 100, loss: loss / 100, classification, alternative: before.analysis.bestMove, variation: before.analysis.variation, analysisId: before.analysisId, fen: before.fen });
-  }
-  return critical;
+export function findCriticalMoves(points: ReviewPoint[], thresholds: ClassificationThresholds, classifications = classifyGameMoves(points, thresholds)) {
+  return classifications.flatMap((move) => {
+    if ((move.classification !== "Inaccuracy" && move.classification !== "Mistake" && move.classification !== "Blunder") || move.lossCp === null || move.evaluationBefore === null || move.evaluationAfter === null) return [];
+    const before = points[move.ply - 1];
+    return [{ ply: move.ply, moveNumber: moveNumberAtPosition(before.fen, move.ply), color: move.color, san: move.san, before: move.evaluationBefore, after: move.evaluationAfter, loss: move.lossCp / 100, classification: move.classification, alternative: move.bestMove, variation: move.continuation, analysisId: before.analysisId, fen: before.fen }];
+  });
 }

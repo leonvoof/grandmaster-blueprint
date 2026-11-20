@@ -1,8 +1,7 @@
 "use client";
-import { findCriticalMoves, type ReviewPoint } from "@/lib/evaluation-review";
+import type { findCriticalMoves, ReviewPoint } from "@/lib/evaluation-review";
 
-export function EvaluationReview({ points, selectedPly, onSelect, thresholds, onThresholdsChange }: { points: ReviewPoint[]; selectedPly: number; onSelect: (ply: number) => void; thresholds: { inaccuracy: number; mistake: number; blunder: number }; onThresholdsChange: (thresholds: { inaccuracy: number; mistake: number; blunder: number }) => void }) {
-  const critical = findCriticalMoves(points, thresholds);
+export function EvaluationReview({ points, critical, selectedPly, onSelect, thresholds, onThresholdsChange }: { points: ReviewPoint[]; critical: ReturnType<typeof findCriticalMoves>; selectedPly: number; onSelect: (ply: number) => void; thresholds: { inaccuracy: number; mistake: number; blunder: number }; onThresholdsChange: (thresholds: { inaccuracy: number; mistake: number; blunder: number }) => void }) {
   function update(key: keyof typeof thresholds, value: string) {
     const amount = Number(value);
     if (Number.isInteger(amount) && amount >= 0) onThresholdsChange({ ...thresholds, [key]: amount });
@@ -11,8 +10,8 @@ export function EvaluationReview({ points, selectedPly, onSelect, thresholds, on
   const min = Math.min(-2, ...vals), max = Math.max(2, ...vals);
   const x = (ply: number) => 36 + (points.length <= 1 ? 0 : (ply / (points.length - 1)) * 584);
   const y = (value: number) => 152 - ((value - min) / (max - min)) * 128;
-  return <section className="mt-5 rounded-xl border border-white/10 p-4"><h3 className="font-medium">Evaluation and move review</h3><p className="mt-1 text-xs text-gray-400">White perspective · classifications are approximate at shallow depth. Mate scores are shown separately and excluded from centipawn-loss classification.</p>
-    <label className="mt-2 flex gap-2 text-xs">Approximate thresholds (cp)<input aria-label="Inaccuracy threshold" className="w-14 bg-black/30 p-1" type="number" value={thresholds.inaccuracy} onChange={(event) => update("inaccuracy", event.target.value)}/><input aria-label="Mistake threshold" className="w-14 bg-black/30 p-1" type="number" value={thresholds.mistake} onChange={(event) => update("mistake", event.target.value)}/><input aria-label="Blunder threshold" className="w-14 bg-black/30 p-1" type="number" value={thresholds.blunder} onChange={(event) => update("blunder", event.target.value)}/></label>
+  return <section className="mt-5 rounded-xl border border-white/10 p-4"><h3 className="font-medium">Evaluation and move review</h3><p className="mt-1 text-xs text-gray-400">Evaluations are from White’s perspective. Penalty labels require both a centipawn loss and a drop in estimated expected score for the mover. Mate scores are shown separately.</p>
+    <label className="mt-2 flex gap-2 text-xs">Minimum losses (cp)<input aria-label="Inaccuracy threshold" className="w-14 bg-black/30 p-1" type="number" value={thresholds.inaccuracy} onChange={(event) => update("inaccuracy", event.target.value)}/><input aria-label="Mistake threshold" className="w-14 bg-black/30 p-1" type="number" value={thresholds.mistake} onChange={(event) => update("mistake", event.target.value)}/><input aria-label="Blunder threshold" className="w-14 bg-black/30 p-1" type="number" value={thresholds.blunder} onChange={(event) => update("blunder", event.target.value)}/></label>
     <svg viewBox="0 0 640 180" className="mt-2 w-full" role="img" aria-label="White-perspective evaluation graph with gaps for unanalyzed positions">
       {[0, 1, 2, 3, 4].map((line) => <g key={line}><line x1="36" x2="620" y1={20 + line * 32} y2={20 + line * 32} stroke="#ffffff18"/><text x="2" y={24 + line * 32} fill="#999" fontSize="10">{(max - (line / 4) * (max - min)).toFixed(1)}</text></g>)}
       {points.map((point, index) => point.evaluation === null || index === 0 || points[index - 1].evaluation === null ? null : <line key={`segment-${point.ply}`} x1={x(points[index - 1].ply)} y1={y(points[index - 1].evaluation!)} x2={x(point.ply)} y2={y(point.evaluation)} stroke="#a58aff" strokeWidth="2"/>)}

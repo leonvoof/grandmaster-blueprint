@@ -148,3 +148,14 @@ test("assessments with missing, incompatible, shallow, illegal-PV, or mate evide
   assert.equal(classifyExplorationMove(before, after, makeAnalysis(0, ["Qh9"]), makeAnalysis(0, []), thresholds), null);
   assert.equal(classifyExplorationMove(before, after, makeAnalysis(0, ["e4"], 12, "mate"), makeAnalysis(0, [], 12, "mate"), thresholds), null);
 });
+
+test("live variation assessments use the same outcome-sensitive severity bands", () => {
+  const tree = createExplorationTree(new Chess().fen(), 0);
+  const branch = addExplorationMove(tree, "a2", "a3").tree;
+  const before = branch.nodes[branch.rootId];
+  const after = branch.nodes[branch.currentId];
+  const assess = (a, b) => classifyExplorationMove(before, after, makeAnalysis(a, ["Nf3"]), makeAnalysis(b, []), thresholds);
+  assert.equal(assess(800, 500).classification, "Good");
+  assert.equal(assess(100, 70).classification, "Good");
+  assert.equal(assess(0, -250).classification, "Blunder");
+});

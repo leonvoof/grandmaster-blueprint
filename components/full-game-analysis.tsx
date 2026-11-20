@@ -11,17 +11,17 @@ import { findCriticalMoves } from "@/lib/evaluation-review";
 import { MistakeReviewSession } from "@/components/mistake-review-session";
 import { StockfishAnalysis } from "@/components/stockfish-analysis";
 import { moverAtPosition, moveNumberAtPosition } from "@/lib/game-viewer-controls";
-import { classifyGameMoves, summarizeClassifiedMoves, classifiedMoveCount, type MoveClassification } from "@/lib/game-review-classification";
+import { classifyGameMoves, summarizeClassifiedMoves, classifiedMoveCount, MIN_CLASSIFICATION_DEPTH, type MoveClassification, type ClassificationThresholds } from "@/lib/game-review-classification";
 
 type Position = GamePosition;
 import { readBrowserAnalyses, saveBrowserAnalysis, type SavedAnalysis as Saved } from "@/lib/browser-game-review";
-type Props = { browserLocal?: boolean; gameId: string; positions: Position[]; selectedPly: number; onSelect: (ply: number) => void; onPositionAnalysis?: (analysis: Analysis | null, fen?: string) => void; onSelectedMoveClassification?: (classification: MoveClassification | null, analyzing: boolean) => void; onReviewModeChange?: (active: boolean) => void; openingName?: string; playerColor?: "white" | "black" | null };
+type Props = { browserLocal?: boolean; gameId: string; positions: Position[]; selectedPly: number; thresholds: ClassificationThresholds; onThresholdsChange: (value: ClassificationThresholds) => void; onSelect: (ply: number) => void; onPositionAnalysis?: (analysis: Analysis | null, fen?: string) => void; onSelectedMoveClassification?: (classification: MoveClassification | null, analyzing: boolean) => void; onReviewModeChange?: (active: boolean) => void; openingName?: string; playerColor?: "white" | "black" | null };
 
 function fromSaved(saved: Saved): Analysis {
   return { engine: saved.engine, depth: saved.depth, score: saved.scoreType && saved.scoreValue !== null ? { kind: saved.scoreType, value: saved.scoreValue } : null, bestMove: saved.bestMove, variation: JSON.parse(saved.variation), ...(saved.terminal && { terminal: saved.terminal as Analysis["terminal"] }) };
 }
 
-export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly, onSelect, onPositionAnalysis, onSelectedMoveClassification, onReviewModeChange, openingName, playerColor }: Props) {
+export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly, thresholds, onThresholdsChange, onSelect, onPositionAnalysis, onSelectedMoveClassification, onReviewModeChange, openingName, playerColor }: Props) {
   const [depth, setDepth] = useState(DEFAULT_DEPTH);
   const [saved, setSaved] = useState<Saved[]>([]);
   const [results, setResults] = useState<Record<number, Analysis>>({});
@@ -32,7 +32,6 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
   const [error, setError] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
   const [panel, setPanel] = useState<"moves" | "summary" | "graph">("moves");
-  const [thresholds, setThresholds] = useState({ inaccuracy: 50, mistake: 100, blunder: 200 });
   const liveJob = useRef<AbortController | null>(null);
   const job = useRef<AbortController | null>(null);
   const generation = useRef(0);
@@ -137,18 +136,18 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
   const doneCount = Math.max(Object.keys(results).length, positions.filter((position) => savedPositionKeys.has(`${position.ply}:${position.fen}`)).length);
   const reviewPoints: ReviewPoint[] = positions.map((position) => {
     const record = byPositionResult(activeResults, position);
-    const analysis = results[position.ply] ?? (record ? fromSaved(record) : null);
-    const savedPosition = byPositionResult(activeResults, position);
-    return { ...position, ...evaluationValue(analysis), analysis, analysisId: savedPosition?.id, settings: savedPosition?.settings, fen: position.fen };
+    const result = results[position.ply];
+    // Live results carry the UCI name while saved records carry the pinned build ID.
+    const analysis = result ? { ...result, engine: ENGINE_BUILD } : record ? fromSaved(record) : null;
+    return { ...position, ...evaluationValue(analysis), analysis, analysisId: record?.id, settings: analysis ? ENGINE_SETTINGS : undefined };
   });
   const classifications = classifyGameMoves(reviewPoints, thresholds);
   const classificationByPly = new Map(classifications.map((move) => [move.ply, move]));
   const selectedMoveClassification = classificationByPly.get(selectedPly)?.classification ?? null;
   const selectedMoveAnalyzing = Boolean(!selectedMoveClassification && !reviewOpen && (running || (browserLocal && ready && selectedPly > 0 && !selectedAnalysis && !visibleAnalysis)));
   useEffect(() => { onSelectedMoveClassification?.(selectedMoveClassification, selectedMoveAnalyzing); }, [onSelectedMoveClassification, selectedMoveClassification, selectedMoveAnalyzing]);
-  const reviewableMoves = findCriticalMoves(reviewPoints, thresholds).filter((move) => !browserLocal || (classificationByPly.get(move.ply)?.classification === move.classification && classificationByPly.get(move.ply)?.bestMove)).map((move) => ({
+  const reviewableMoves = findCriticalMoves(reviewPoints, thresholds, classifications).map((move) => ({
     ...move,
-    san: positions[move.ply]?.san ?? move.san,
     engine: reviewPoints[move.ply - 1]?.analysis?.engine,
     depth: reviewPoints[move.ply - 1]?.analysis?.depth,
   }));
@@ -211,7 +210,7 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
     })}</div>
     </div>}
     {!reviewOpen && panel === "summary" && <div className="min-h-0 flex-1 overflow-y-auto p-4"><GameReviewSummary summary={gameSummary} onSelect={onSelect} onReviewMistakes={() => setReviewOpen(true)} analyzedAtDepth={analyzedAtDepth} totalPositions={total} running={running} /></div>}
-    {!reviewOpen && panel === "graph" && <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"><EvaluationReview points={reviewPoints} selectedPly={selectedPly} onSelect={onSelect} thresholds={thresholds} onThresholdsChange={setThresholds} /></div>}
+    {!reviewOpen && panel === "graph" && <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"><EvaluationReview points={reviewPoints} selectedPly={selectedPly} onSelect={onSelect} thresholds={thresholds} onThresholdsChange={onThresholdsChange} critical={reviewableMoves} /></div>}
     <footer className="border-t border-white/[0.07] p-3"><button className="knightforge-primary-action w-full rounded-lg bg-[#7655dc]/20 px-3 py-2.5 text-sm font-medium hover:bg-[#7655dc]/30" onClick={() => setReviewOpen(true)}>Review My Mistakes</button></footer>
   </section>;
 }
@@ -244,7 +243,7 @@ function GameReviewSummary({ summary, onSelect, onReviewMistakes, analyzedAtDept
     ? "No moves met the current classification requirements. Moves need compatible before and after evaluations, a legal saved continuation, and sufficient search depth. Mate-only positions are not classified."
     : "Run full-game analysis to create compatible evaluations for this game.";
   return <section aria-label="Game review summary">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Game Review</h3><p className="mt-1 max-w-xl text-xs text-gray-400">Classifications use compatible saved analysis at depth 10 or higher. Excellent is ≤10 cp loss; Good is below your inaccuracy threshold. Mate scores and missing data are left unclassified.</p></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Game Review</h3><p className="mt-1 max-w-xl text-xs text-gray-400">Classifications require compatible searches at depth {MIN_CLASSIFICATION_DEPTH} or higher. Penalties depend on how much the mover’s estimated expected score drops. Mate scores and insufficient evidence are left unclassified.</p></div>
       <button className="knightforge-primary-action rounded-lg bg-[#7655dc]/25 px-3 py-2 text-xs hover:bg-[#7655dc]/35" onClick={onReviewMistakes}>Review My Mistakes</button></div>
     {running && !hasAnalysis ? <p className="mt-4 rounded-xl border border-white/[0.07] bg-black/15 p-4 text-sm text-gray-300">Analyzing game positions… classifications will appear as compatible results are saved.</p>
       : !hasAnalysis ? <p className="mt-4 rounded-xl border border-dashed border-white/10 bg-black/10 p-4 text-sm text-gray-400">Analyze game to see move classifications.</p>

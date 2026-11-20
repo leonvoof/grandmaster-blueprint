@@ -17,16 +17,48 @@ test("classifications use mover perspective, compatible saved positions, and val
   assert.equal(black.bestMove, "Nf6");
 });
 
-test("Excellent, Good, Inaccuracy, Mistake, and Blunder use explicit bands and configured thresholds", () => {
-  const make = (loss, ply = 1) => classifyGameMoves([position(0, null, 0), position(ply, "a3", -loss)], thresholds)[0].classification;
-  assert.equal(make(10), "Excellent"); assert.equal(make(49), "Good");
-  assert.equal(make(50), "Inaccuracy"); assert.equal(make(100), "Mistake"); assert.equal(make(200), "Blunder");
-  assert.equal(classifyGameMoves([position(0, null, 0), position(1, "a3", -30)], { inaccuracy: 25, mistake: 80, blunder: 160 })[0].classification, "Inaccuracy");
+test("uses both configured centipawn minimums and expected-score loss", () => {
+  const assess = (before, after, limits = thresholds) =>
+    classifyGameMoves([position(0, null, before), position(1, "a3", after)], limits)[0].classification;
+  assert.equal(assess(0, -10), "Excellent");
+  assert.equal(assess(100, 70), "Good");
+  assert.equal(assess(800, 500), "Good");
+  assert.equal(assess(0, -50), "Inaccuracy");
+  assert.equal(assess(0, -100), "Mistake");
+  assert.equal(assess(0, -250), "Blunder");
+  assert.equal(assess(0, -30, { inaccuracy: 25, mistake: 80, blunder: 160 }), "Good");
+  assert.equal(assess(0, -60, { inaccuracy: 75, mistake: 100, blunder: 200 }), "Good");
+});
+
+test("equivalent White and Black losses have equal severity and preserve White evaluation signs", () => {
+  const white = classifyGameMoves([position(0, null, 0), position(1, "a3", -250)], thresholds)[0];
+  const black = classifyGameMoves([
+    position(0, null, 0), position(1, "e4", 0, "Nf6", 12, "cp", ["Nf6"]),
+    position(2, "e5", 250),
+  ], thresholds)[1];
+  assert.equal(white.classification, "Blunder");
+  assert.equal(black.classification, white.classification);
+  assert.equal(white.lossCp, 250);
+  assert.equal(black.lossCp, white.lossCp);
+  assert.equal(white.evaluationAfter, -2.5);
+  assert.equal(black.evaluationAfter, 2.5);
+});
+
+test("withholds a label when the recommended move shows a large loss or an alternative shows a large gain", () => {
+  const before = position(0, null, 0);
+  for (const after of [position(1, "Nf3", -300), position(1, "a3", 300)]) {
+    const [move] = classifyGameMoves([before, after], thresholds);
+    assert.equal(move.classification, null);
+    assert.match(move.reason, /disagree materially/);
+  }
 });
 
 test("missing, incompatible, shallow, mate, and illegal-PV data remain unclassified", () => {
   assert.equal(classifyGameMoves([position(0, null, 0), { ...position(1, "a3", -300), analysis: null }], thresholds)[0].classification, null);
   assert.equal(classifyGameMoves([position(0, null, 0, "Nf3", 6), position(1, "a3", -300, "Nf3", 6)], thresholds)[0].classification, null);
+  assert.equal(classifyGameMoves([position(0, null, 0), position(1, "a3", -300, "Nf3", 14)], thresholds)[0].classification, null);
+  assert.equal(classifyGameMoves([position(0, null, 0, "Nf3", 11), position(1, "a3", -300, "Nf3", 11)], thresholds)[0].classification, null);
+  assert.equal(classifyGameMoves([position(0, null, 0, "Nf3", 12, "cp", []), position(1, "a3", -300)], thresholds)[0].classification, null);
   assert.equal(classifyGameMoves([position(0, null, 0), { ...position(1, "a3", -300), settings: "other" }], thresholds)[0].classification, null);
   assert.match(classifyGameMoves([position(0, null, 0, "Nf3", 12, "mate"), position(1, "a3", -300)], thresholds)[0].reason, /Mate scores/);
   assert.equal(classifyGameMoves([position(0, null, 0, "Qh9"), position(1, "a3", -300)], thresholds)[0].classification, null);
