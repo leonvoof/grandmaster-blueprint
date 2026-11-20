@@ -89,11 +89,12 @@ export function PublicWorkspace({ section }: { section: "games" | "analysis" | "
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not export the browser backup."); }
   }
   const title = { games: "Games", analysis: "Analysis board", openings: "Opening recall", tactics: "Tactics" }[section];
-  return <div className="space-y-6">
+  const gamesWorkspace = section === "games" || section === "analysis";
+  return <div className={gamesWorkspace ? "knightforge-public-games" : "space-y-6"}>
     <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
     {section === "tactics" ? <Tactics progress={progress} update={update} /> :
       <PgnWorkspace key={section} training={section === "openings"} lichessImport={section === "games"} progress={progress} update={update} restoreVersion={restoreVersion} />}
-    <details className={panel}>
+    <details className={`${panel} ${gamesWorkspace ? "knightforge-backup-panel" : ""}`}>
       <summary className="cursor-pointer font-semibold">Backup &amp; restore</summary>
       <p className="my-3 max-w-2xl text-sm text-gray-400">Saved games, game reviews, reflections, opening lines, and completion counts stay in this browser. They do not sync across devices and may be lost when browser storage is cleared. Engine cache entries are temporary and are excluded from backups.</p>
       <div className="flex flex-wrap items-center gap-4">
@@ -101,8 +102,8 @@ export function PublicWorkspace({ section }: { section: "games" | "analysis" | "
         <label className="text-sm">Restore progress <input type="file" accept=".json,application/json" onChange={(event) => { void restore(event.target.files?.[0]); event.target.value = ""; }} /></label>
       </div>
     </details>
-    {message && <p role="status" className="text-sm text-violet-200">{message}</p>}
-    <p className="text-sm text-gray-400">Account sync, repertoire notes, spaced repetition, and profile statistics are available in the authenticated workspace.</p>
+    {message && <p role="status" className={`text-sm text-violet-200 ${gamesWorkspace ? "knightforge-workspace-message" : ""}`}>{message}</p>}
+    <p className={gamesWorkspace ? "knightforge-workspace-footnote" : "text-sm text-gray-400"}>Account sync, repertoire notes, spaced repetition, and profile statistics are available in the authenticated workspace.</p>
   </div>;
 }
 
@@ -216,7 +217,7 @@ function PgnWorkspace({ training, lichessImport, progress, update, restoreVersio
     restoreVersion,
     save: (pgn, name) => update((data) => data.games.some((game) => game.kind === "game" && game.pgn === pgn)
       ? data : { ...data, games: [...data.games, { pgn, name, kind: "game" }] }),
-    importPanel: lichessImport && <section className="mb-6 rounded-xl border border-violet-300/20 bg-violet-300/[0.04] p-4" aria-label="Import from Lichess">
+    importPanel: lichessImport && <section className="knightforge-lichess-import mb-6 rounded-xl border border-violet-300/20 bg-violet-300/[0.04] p-4" aria-label="Import from Lichess">
           <h2 className="font-semibold">Import from Lichess</h2>
           <p className="my-2 text-sm text-gray-400">Import public, completed games directly from Lichess. No KnightForge account, Lichess login, or token is needed. Games stay in this browser.</p>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -237,7 +238,7 @@ function PgnWorkspace({ training, lichessImport, progress, update, restoreVersio
               </select>
             </label>
             <div className="flex items-end">
-              <button className="btn w-full bg-violet-400/20" type="button" disabled={!progress || lichessBusy || Boolean(cooldownSeconds)} onClick={() => void importFromLichess()}>
+              <button className="knightforge-import-action btn w-full bg-violet-400/20" type="button" disabled={!progress || lichessBusy || Boolean(cooldownSeconds)} onClick={() => void importFromLichess()}>
                 {lichessBusy ? "Importing…" : cooldownSeconds ? `Wait ${cooldownSeconds}s` : "Import Games"}
               </button>
             </div>

@@ -155,11 +155,11 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
   return <section className="flex min-h-0 max-h-[max(480px,calc(100dvh-160px))] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b] shadow-[0_18px_60px_rgba(0,0,0,0.18)]" aria-label="Full game analysis">
     <header className="border-b border-white/[0.07] p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a994f0]">Game analysis</p><h2 className="mt-1 text-lg font-medium">Stockfish review</h2></div>
+      <div><p className="knightforge-eyebrow text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a994f0]">Game analysis</p><h2 className="mt-1 text-lg font-medium">Stockfish review</h2></div>
       <label className="flex items-center gap-2 text-xs text-gray-400">Depth<select aria-label="Analysis depth" className="rounded-lg border border-white/15 bg-[#0b0d13] px-2 py-2 text-sm text-white" value={depth} disabled={running} onChange={(event) => { setDepth(Number(event.target.value)); setResults({}); }}>{Array.from({ length: MAX_DEPTH - MIN_DEPTH + 1 }, (_, index) => index + MIN_DEPTH).map((value) => <option key={value}>{value}</option>)}</select></label>
     </div>
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      {running ? <button className="rounded-lg border border-white/15 px-3 py-2 text-sm" onClick={cancel}>Cancel game analysis</button> : <button className="rounded-lg bg-[#7655dc]/25 px-3 py-2 text-sm" disabled={!total || !ready} onClick={analyzeGame}>Analyze Entire Game</button>}
+      {running ? <button className="rounded-lg border border-white/15 px-3 py-2 text-sm" onClick={cancel}>Cancel game analysis</button> : <button className="knightforge-primary-action rounded-lg bg-[#7655dc]/25 px-3 py-2 text-sm" disabled={!total || !ready} onClick={analyzeGame}>Analyze Entire Game</button>}
       <span className="text-xs text-gray-400">{activeResults.length} saved at this depth</span>
     </div>
     <p className="mt-2 text-xs text-gray-400" role="status">{running ? `${completed} / ${total} positions completed` : doneCount ? `${doneCount} / ${total} positions loaded` : `${total} positions · analysis starts on request`}</p>
@@ -167,7 +167,7 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
     </header>
     {!reviewOpen && <div className="border-b border-white/[0.07] bg-[#0d0f16] px-4 py-3" aria-live="polite">
       <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">Selected position · White perspective</p><p className="mt-0.5 text-xl font-semibold tabular-nums text-white">{visibleAnalysis ? visibleAnalysis.score?.kind === "mate" ? `${visibleAnalysis.score.value > 0 ? "White" : visibleAnalysis.score.value < 0 ? "Black" : ""} ${visibleAnalysis.score.value === 0 ? "Mate" : `mates in ${Math.abs(visibleAnalysis.score.value)}`}` : visibleAnalysis.score ? `${visibleAnalysis.score.value > 0 ? "+" : ""}${(visibleAnalysis.score.value / 100).toFixed(2)}` : visibleAnalysis.terminal ?? "Evaluation unavailable" : browserLocal ? "Analyzing position…" : "No saved evaluation"}</p></div>
-      {visibleAnalysis?.bestMove && <div className="text-right"><p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">Best move</p><p className="mt-0.5 font-mono text-lg text-[#c7b8ff]">{visibleAnalysis.bestMove}</p></div>}</div>
+      {visibleAnalysis?.bestMove && <div className="text-right"><p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">Best move</p><p className="knightforge-analysis-accent mt-0.5 font-mono text-lg text-[#c7b8ff]">{visibleAnalysis.bestMove}</p></div>}</div>
       {selectedPly > 0 && (() => {
         const move = classificationByPly.get(selectedPly);
         if (!move) return null;
@@ -189,12 +189,12 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
     </div>}
     {!reviewOpen && !browserLocal && <details className="border-b border-white/[0.07] px-4 py-2"><summary className="cursor-pointer text-xs font-medium text-gray-300">Analyze selected position with Stockfish</summary><StockfishAnalysis fen={selectedPosition?.fen ?? positions[0]?.fen ?? ""} gameId={gameId} /></details>}
     {!reviewOpen && <div className="flex items-center gap-1 border-b border-white/[0.07] px-3 pt-2" role="tablist" aria-label="Analysis views">
-      <button role="tab" aria-selected={panel === "moves"} className={`rounded-t-lg px-3 py-2 text-xs ${panel === "moves" ? "bg-[#7655dc]/20 text-white" : "text-gray-400 hover:text-white"}`} onClick={() => setPanel("moves")}>Moves</button>
-      <button role="tab" aria-selected={panel === "summary"} className={`rounded-t-lg px-3 py-2 text-xs ${panel === "summary" ? "bg-[#7655dc]/20 text-white" : "text-gray-400 hover:text-white"}`} onClick={() => setPanel("summary")}>Game review</button>
-      <button role="tab" aria-selected={panel === "graph"} className={`rounded-t-lg px-3 py-2 text-xs ${panel === "graph" ? "bg-[#7655dc]/20 text-white" : "text-gray-400 hover:text-white"}`} onClick={() => setPanel("graph")}>Graph & mistakes</button>
+      <button role="tab" aria-selected={panel === "moves"} className={`knightforge-tab rounded-t-lg px-3 py-2 text-xs ${panel === "moves" ? "bg-[#7655dc]/20 text-white" : "text-gray-400 hover:text-white"}`} onClick={() => setPanel("moves")}>Moves</button>
+      <button role="tab" aria-selected={panel === "summary"} className={`knightforge-tab rounded-t-lg px-3 py-2 text-xs ${panel === "summary" ? "bg-[#7655dc]/20 text-white" : "text-gray-400 hover:text-white"}`} onClick={() => setPanel("summary")}>Game review</button>
+      <button role="tab" aria-selected={panel === "graph"} className={`knightforge-tab rounded-t-lg px-3 py-2 text-xs ${panel === "graph" ? "bg-[#7655dc]/20 text-white" : "text-gray-400 hover:text-white"}`} onClick={() => setPanel("graph")}>Graph & mistakes</button>
     </div>}
     {!reviewOpen && panel === "moves" && <div className="min-h-0 flex-1 overflow-y-auto p-3" aria-label="Game moves">
-      <button ref={selectedPly === 0 ? activeMoveRef : null} onClick={() => onSelect(0)} className={`mb-2 rounded-lg px-2.5 py-1.5 text-xs ${selectedPly === 0 ? "bg-[#7655dc] text-white" : "text-gray-400 hover:bg-white/5"}`}>Starting position</button>
+      <button ref={selectedPly === 0 ? activeMoveRef : null} aria-current={selectedPly === 0 ? "step" : undefined} onClick={() => onSelect(0)} className={`knightforge-start-position mb-2 rounded-lg px-2.5 py-1.5 text-xs ${selectedPly === 0 ? "bg-[#7655dc] text-white" : "text-gray-400 hover:bg-white/5"}`}>Starting position</button>
       <div className="grid grid-cols-[auto_1fr_1fr] gap-1">{positions.filter((position) => position.ply > 0).map((position) => {
       const analysis = results[position.ply] ?? (byPositionResult(activeResults, position) ? fromSaved(byPositionResult(activeResults, position)!) : null);
       const evaluation = analysis?.score ? analysis.score.kind === "mate" ? `M${analysis.score.value}` : (analysis.score.value / 100).toFixed(2) : analysis?.terminal ? "Draw" : "";
@@ -203,13 +203,13 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
       const critical = reviewableMoves.find((item) => item.ply === position.ply);
       const classification = classificationByPly.get(position.ply);
       return <button ref={current ? activeMoveRef : null} aria-current={current ? "step" : undefined} key={position.ply} className={`col-span-3 grid grid-cols-[2.5rem_minmax(0,1fr)_3rem] items-center rounded-lg border px-2.5 py-2 text-left text-sm transition-colors ${current ? "border-[#a58aff]/50 bg-[#7655dc]/20 text-white" : "border-transparent text-gray-300 hover:bg-white/[0.045]"}`} onClick={() => onSelect(position.ply)} title={`Go to ${critical ? `${critical.classification}: ` : ""}position ${position.ply}`}>
-        <span className="text-[10px] tabular-nums text-gray-500">{moveNumberAtPosition(beforeFen, position.ply)}{moverAtPosition(beforeFen, position.ply) === "white" ? "." : "…"}</span><span className="truncate font-medium">{position.san}{classification?.classification && <span className={`ml-2 rounded px-1.5 py-0.5 text-[9px] ${classificationColor(classification.classification)} bg-white/[0.06]`} title={classification.reason}>{classificationIcon(classification.classification)} {classification.classification}</span>}</span><span className="text-right font-mono text-[10px] text-[#c7b8ff]">{evaluation}</span>
+        <span className="text-[10px] tabular-nums text-gray-500">{moveNumberAtPosition(beforeFen, position.ply)}{moverAtPosition(beforeFen, position.ply) === "white" ? "." : "…"}</span><span className="truncate font-medium">{position.san}{classification?.classification && <span className={`ml-2 rounded px-1.5 py-0.5 text-[9px] ${classificationColor(classification.classification)} bg-white/[0.06]`} title={classification.reason}>{classificationIcon(classification.classification)} {classification.classification}</span>}</span><span className="knightforge-analysis-accent text-right font-mono text-[10px] text-[#c7b8ff]">{evaluation}</span>
       </button>;
     })}</div>
     </div>}
     {!reviewOpen && panel === "summary" && <div className="min-h-0 flex-1 overflow-y-auto p-4"><GameReviewSummary summary={gameSummary} onSelect={onSelect} onReviewMistakes={() => setReviewOpen(true)} analyzedAtDepth={analyzedAtDepth} totalPositions={total} running={running} /></div>}
     {!reviewOpen && panel === "graph" && <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"><EvaluationReview points={reviewPoints} selectedPly={selectedPly} onSelect={onSelect} thresholds={thresholds} onThresholdsChange={setThresholds} /></div>}
-    <footer className="border-t border-white/[0.07] p-3"><button className="w-full rounded-lg bg-[#7655dc]/20 px-3 py-2.5 text-sm font-medium hover:bg-[#7655dc]/30" onClick={() => setReviewOpen(true)}>Review My Mistakes</button></footer>
+    <footer className="border-t border-white/[0.07] p-3"><button className="knightforge-primary-action w-full rounded-lg bg-[#7655dc]/20 px-3 py-2.5 text-sm font-medium hover:bg-[#7655dc]/30" onClick={() => setReviewOpen(true)}>Review My Mistakes</button></footer>
   </section>;
 }
 
@@ -242,7 +242,7 @@ function GameReviewSummary({ summary, onSelect, onReviewMistakes, analyzedAtDept
     : "Run full-game analysis to create compatible evaluations for this game.";
   return <section aria-label="Game review summary">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Game Review</h3><p className="mt-1 max-w-xl text-xs text-gray-400">Classifications use compatible saved analysis at depth 10 or higher. Excellent is ≤10 cp loss; Good is below your inaccuracy threshold. Mate scores and missing data are left unclassified.</p></div>
-      <button className="rounded-lg bg-[#7655dc]/25 px-3 py-2 text-xs hover:bg-[#7655dc]/35" onClick={onReviewMistakes}>Review My Mistakes</button></div>
+      <button className="knightforge-primary-action rounded-lg bg-[#7655dc]/25 px-3 py-2 text-xs hover:bg-[#7655dc]/35" onClick={onReviewMistakes}>Review My Mistakes</button></div>
     {running && !hasAnalysis ? <p className="mt-4 rounded-xl border border-white/[0.07] bg-black/15 p-4 text-sm text-gray-300">Analyzing game positions… classifications will appear as compatible results are saved.</p>
       : !hasAnalysis ? <p className="mt-4 rounded-xl border border-dashed border-white/10 bg-black/10 p-4 text-sm text-gray-400">Analyze game to see move classifications.</p>
         : !hasEligibleMoves ? <p className="mt-4 rounded-xl border border-white/[0.07] bg-black/10 p-4 text-sm text-gray-400">{reason}</p>

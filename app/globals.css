@@ -6,3 +6,156 @@ html { min-height: 100%; background: #0b0d13; }
 body { margin: 0; min-height: 100vh; background: #0b0d13; color: #f4f3f8; font-family: Arial, Helvetica, sans-serif; }
 button, input, select { font: inherit; }
 ::selection { background: #7556d9; color: white; }
+
+/* Public Games and Analysis workspace: a restrained charcoal, green, and turquoise system. */
+.knightforge-public-games {
+  --kf-mint: #70d6b8;
+  --kf-mint-strong: #37b993;
+  --kf-line: rgba(112, 214, 184, .16);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  color: #edf4f0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.knightforge-public-games > h1 {
+  margin: 0;
+  color: #f2f7f4;
+  font-size: clamp(1.35rem, 2vw, 1.7rem);
+  font-weight: 650;
+  letter-spacing: -.035em;
+}
+.knightforge-public-games > h1::after {
+  display: block;
+  width: 2.25rem;
+  height: 2px;
+  margin-top: .45rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--kf-mint-strong), transparent);
+  content: "";
+}
+.knightforge-public-games .knightforge-game-viewer { display: flex; flex-direction: column; gap: .9rem; min-width: 0; }
+.knightforge-public-games .knightforge-game-meta {
+  min-height: 78px;
+  border-color: rgba(255,255,255,.075) !important;
+  background: linear-gradient(110deg, rgba(20,31,30,.96), rgba(15,18,22,.98) 55%, rgba(17,25,23,.96)) !important;
+  box-shadow: 0 14px 40px rgba(0,0,0,.16), inset 0 1px rgba(255,255,255,.025);
+}
+.knightforge-public-games .knightforge-import-panel {
+  border-color: rgba(255,255,255,.075) !important;
+  background: rgba(16,20,22,.88) !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,.12);
+}
+.knightforge-public-games .knightforge-import-panel > summary {
+  position: relative;
+  min-height: 44px;
+  color: #b7c7c0;
+  font-size: .78rem;
+  transition: color .18s ease, background .18s ease;
+}
+.knightforge-public-games .knightforge-import-panel > summary:hover { color: var(--kf-mint); background: rgba(112,214,184,.035); }
+.knightforge-public-games .knightforge-lichess-import { border-color: rgba(112,214,184,.18) !important; background: rgba(112,214,184,.035) !important; }
+.knightforge-public-games .knightforge-import-action { border: 1px solid rgba(112,214,184,.22) !important; background: rgba(55,185,147,.14) !important; color: #c3f5e5 !important; }
+.knightforge-public-games .knightforge-import-action:hover:not(:disabled) { background: rgba(55,185,147,.23) !important; }
+.knightforge-public-games input:focus-visible,
+.knightforge-public-games textarea:focus-visible,
+.knightforge-public-games select:focus-visible { outline: 2px solid rgba(112,214,184,.65); outline-offset: 2px; }
+.knightforge-public-games .knightforge-analysis-layout { min-width: 0; gap: 1rem !important; }
+.knightforge-public-games .knightforge-board-panel {
+  border-color: var(--kf-line) !important;
+  background: radial-gradient(ellipse at 48% 42%, rgba(39,75,65,.24), transparent 58%), linear-gradient(145deg, #121918, #101316 72%) !important;
+  box-shadow: 0 22px 64px rgba(0,0,0,.26), inset 0 1px rgba(255,255,255,.035) !important;
+}
+.knightforge-public-games .knightforge-board-panel [data-square] { transition: filter .16s ease, background-color .18s ease; }
+.knightforge-public-games .knightforge-board-panel .knightforge-board-row > div { overflow: hidden; border: 1px solid rgba(218,239,229,.13); border-radius: 7px; box-shadow: 0 20px 42px rgba(0,0,0,.25); }
+.knightforge-public-games .knightforge-board-row > aside { width: 2.15rem; }
+.knightforge-public-games .knightforge-board-panel .btn,
+.knightforge-public-games .knightforge-board-panel select,
+.knightforge-public-games .knightforge-analysis-panel .btn,
+.knightforge-public-games .knightforge-analysis-panel select {
+  border-color: rgba(255,255,255,.09);
+  border-radius: .7rem;
+  background-color: rgba(255,255,255,.035);
+  transition: color .16s ease, border-color .16s ease, background-color .16s ease, transform .16s ease;
+}
+.knightforge-public-games .knightforge-board-panel .btn:hover:not(:disabled),
+.knightforge-public-games .knightforge-analysis-panel .btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(112,214,184,.34);
+  background-color: rgba(112,214,184,.09);
+}
+.knightforge-public-games .knightforge-board-panel .btn:disabled,
+.knightforge-public-games .knightforge-analysis-panel .btn:disabled { opacity: .4; }
+.knightforge-public-games .knightforge-board-panel label { color: #8b9b94; }
+.knightforge-public-games .knightforge-eyebrow { color: var(--kf-mint) !important; }
+.knightforge-public-games .knightforge-board-accent-btn { border-color: rgba(112,214,184,.3) !important; color: #b4f0df !important; }
+.knightforge-public-games .knightforge-primary-action { border: 1px solid rgba(112,214,184,.2); background: rgba(55,185,147,.15) !important; color: #c3f5e5; transition: background .16s ease, transform .16s ease; }
+.knightforge-public-games .knightforge-primary-action:hover:not(:disabled) { transform: translateY(-1px); background: rgba(55,185,147,.24) !important; }
+.knightforge-public-games .knightforge-analysis-accent { color: #91dfc9 !important; }
+.knightforge-public-games .knightforge-tab[aria-selected="true"] { background: rgba(55,185,147,.18) !important; color: #dff8ee !important; }
+.knightforge-public-games .knightforge-start-position[aria-current="step"] { background: #155b4f !important; color: #fff !important; }
+.knightforge-public-games .knightforge-board-row > aside > span:last-of-type { color: #b4f0df; }
+.knightforge-public-games .knightforge-board-panel select:focus-visible,
+.knightforge-public-games .knightforge-board-panel button:focus-visible,
+.knightforge-public-games .knightforge-analysis-panel button:focus-visible,
+.knightforge-public-games .knightforge-analysis-panel select:focus-visible { outline: 2px solid rgba(112,214,184,.7); outline-offset: 2px; }
+.knightforge-public-games .knightforge-move-assessment { border-color: rgba(112,214,184,.2) !important; background: rgba(47,112,92,.12) !important; }
+.knightforge-public-games .knightforge-analysis-panel { min-width: 0; }
+.knightforge-public-games .knightforge-analysis-panel [aria-label="Full game analysis"] {
+  max-height: min(710px, calc(100dvh - 205px)) !important;
+  min-height: 520px;
+  border-color: rgba(255,255,255,.09) !important;
+  background: linear-gradient(155deg, #151a19, #111416 55%, #121615) !important;
+  box-shadow: 0 20px 56px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.025) !important;
+}
+.knightforge-public-games .knightforge-analysis-panel [aria-label="Game moves"] { scroll-behavior: smooth; scrollbar-color: rgba(112,214,184,.28) transparent; scrollbar-width: thin; }
+.knightforge-public-games .knightforge-analysis-panel [aria-label="Game moves"] > div > button { min-height: 46px; border-radius: .65rem; }
+.knightforge-public-games .knightforge-analysis-panel [aria-label="Game moves"] > div > button[aria-current="step"] {
+  border-color: rgba(112,214,184,.4) !important;
+  background: linear-gradient(90deg, rgba(58,141,113,.24), rgba(58,141,113,.09)) !important;
+  box-shadow: inset 2px 0 var(--kf-mint-strong);
+}
+.knightforge-public-games .knightforge-analysis-panel [aria-label="Game moves"] > div > button > span:nth-child(2) > span {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 999px;
+  padding: .18rem .48rem;
+  font-weight: 650;
+}
+.knightforge-public-games .knightforge-analysis-panel [aria-label="Game moves"] > div > button:hover { background-color: rgba(255,255,255,.045); }
+.knightforge-public-games .knightforge-analysis-panel [aria-label="Evaluation bar"] { filter: drop-shadow(0 4px 12px rgba(0,0,0,.25)); }
+.knightforge-public-games .knightforge-explore-panel {
+  max-height: min(710px, calc(100dvh - 205px)) !important;
+  border-color: var(--kf-line) !important;
+  background: linear-gradient(155deg, #151a19, #111416 55%, #121615) !important;
+  box-shadow: 0 20px 56px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.025);
+}
+.knightforge-public-games .knightforge-explore-panel [aria-label="Variation moves"] { scroll-behavior: smooth; scrollbar-color: rgba(112,214,184,.28) transparent; scrollbar-width: thin; }
+.knightforge-public-games .knightforge-explore-panel [aria-label="Variation moves"] > div > button { min-height: 42px; border: 1px solid transparent; transition: background .16s ease, border-color .16s ease; }
+.knightforge-public-games .knightforge-explore-panel [aria-label="Variation moves"] > div > button[aria-current="step"] { border-color: rgba(112,214,184,.32); background: rgba(58,141,113,.18); }
+.knightforge-public-games .knightforge-backup-panel { margin-top: .15rem; }
+.knightforge-public-games .knightforge-workspace-footnote { margin: -.3rem 0 0; color: #65736d; font-size: .68rem; }
+.knightforge-public-games .knightforge-workspace-message { color: #a8ead8 !important; }
+
+@media (min-width: 1024px) {
+  .knightforge-analysis-layout:not(.xl\:grid-cols-1) { grid-template-columns: minmax(0, 1.16fr) minmax(370px, .84fr); }
+}
+@media (max-width: 1023px) {
+  .knightforge-analysis-panel [aria-label="Full game analysis"],
+  .knightforge-explore-panel { max-height: 690px !important; min-height: 500px; }
+}
+@media (max-width: 639px) {
+  .knightforge-public-games { gap: .75rem; }
+  .knightforge-game-viewer { gap: .7rem; }
+  .knightforge-board-panel { padding: .65rem !important; }
+  .knightforge-board-row { gap: .4rem !important; }
+  .knightforge-board-row > aside { width: 1.8rem; }
+  .knightforge-analysis-panel [aria-label="Full game analysis"],
+  .knightforge-explore-panel { max-height: 72dvh !important; min-height: 420px; }
+  .knightforge-analysis-panel [role="tablist"] { overflow-x: auto; }
+  .knightforge-analysis-panel [role="tablist"] button { white-space: nowrap; padding-inline: .65rem; }
+  .knightforge-import-panel > div { padding: .8rem; }
+}
