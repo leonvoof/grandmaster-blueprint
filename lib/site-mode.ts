@@ -19,7 +19,7 @@ const stockfishAssets = new Set(["stockfish-19-lite-single.js", "stockfish-19-li
 export function publicRequestAllowed(path: string, method: string) {
   if (method !== "GET" && method !== "HEAD") return false;
   if (publicPages.some((page) => page === path)) return true;
-  if (path.startsWith("/_next/static/") || path === "/favicon.ico") return true;
+  if (path.startsWith("/_next/static/") || path === "/favicon.ico" || path === "/opening-library/lichess-cc0.json" || path === "/opening-library/CC0.txt") return true;
   const prefix = "/stockfish/19.0.1/";
   return path.startsWith(prefix) && stockfishAssets.has(path.slice(prefix.length));
 }

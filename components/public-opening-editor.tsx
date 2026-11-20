@@ -1,12 +1,14 @@
 "use client";
 
 import { Chess } from "chess.js";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, FlipVertical, Plus, SkipBack, SkipForward } from "lucide-react";
 import { PublicBoard, type BoardMove } from "@/components/public-board";
+import { PublicOpeningLibrary, type LibraryImport } from "@/components/public-opening-library";
+import { loadOpeningLibrary, type OpeningLibrary } from "@/lib/built-in-openings";
 import { PublicOpeningPractice } from "@/components/public-opening-practice";
 import type { PublicProgress } from "@/lib/public-progress";
-import { addRepertoireMove, maxRepertoires, repertoirePositions, repertoireRoot, type PublicRepertoire } from "@/lib/public-repertoire";
+import { addRepertoireMove, maxRepertoires, mergeRepertoireLines, repertoirePositions, repertoireRoot, type PublicRepertoire } from "@/lib/public-repertoire";
 
 type Update = (change: (progress: PublicProgress) => PublicProgress) => boolean;
 const card = "min-w-0 rounded-2xl border border-white/10 bg-[#111815] p-4 sm:p-5";
@@ -15,10 +17,56 @@ const field = "w-full min-w-0 rounded-lg border border-white/15 bg-[#0a0e0d] px-
 
 export function PublicOpeningEditor({ repertoires, update }: { repertoires?: PublicRepertoire[]; update: Update }) {
   const [selectedId, setSelectedId] = useState<string>();
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [library, setLibrary] = useState<OpeningLibrary>();
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [importError, setImportError] = useState("");
   const [practiceId, setPracticeId] = useState<string>();
   const [name, setName] = useState("");
   const [color, setColor] = useState<PublicRepertoire["color"]>("white");
   const selected = repertoires?.find((item) => item.id === selectedId) ?? repertoires?.[0];
+  const needsLibrary = showLibrary || Boolean(selected?.moves.length);
+  useEffect(() => {
+    if (!needsLibrary || library || loadFailed) return;
+    let active = true;
+    void loadOpeningLibrary().then(
+      (data) => { if (active) setLibrary(data); },
+      () => { if (active) setLoadFailed(true); },
+    );
+    return () => { active = false; };
+  }, [needsLibrary, library, loadFailed]);
+
+  function importOpening({ lines, name, color, target, practice }: LibraryImport) {
+    setImportError("");
+    const id = target || crypto.randomUUID();
+    let error = "";
+    const saved = update((previous) => {
+      try {
+        const destination = target ? previous.repertoires.find((item) => item.id === target && item.color === color) : undefined;
+        if (target && !destination) throw new Error("This destination is unavailable. Choose another repertoire.");
+        if (!destination && previous.repertoires.length >= maxRepertoires) throw new Error("The repertoire library is full. Choose an existing repertoire.");
+        const repertoire = mergeRepertoireLines(destination ?? { id, name: name.slice(0, 100), color, moves: [] }, lines, () => crypto.randomUUID());
+        return {
+          ...previous,
+          repertoires: destination ? previous.repertoires.map((item) => item.id === id ? repertoire : item) : [...previous.repertoires, repertoire],
+        };
+      } catch (cause) {
+        error = cause instanceof Error ? cause.message : "Could not import the selected lines.";
+        throw cause;
+      }
+    });
+    if (!saved) {
+      setImportError(error || "Could not save the repertoire in this browser.");
+      return;
+    }
+    setSelectedId(id);
+    if (practice) {
+      setShowLibrary(false);
+      setPracticeId(id);
+    }
+    return id;
+  }
+
   function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!name.trim()) return;
@@ -32,7 +80,19 @@ export function PublicOpeningEditor({ repertoires, update }: { repertoires?: Pub
   const practice = repertoires?.find((item) => item.id === practiceId && item.moves.length > 0);
   return <>
     {practice && <PublicOpeningPractice key={practice.id} repertoire={practice} onExit={() => setPracticeId(undefined)} />}
-    <div className={practice ? "hidden" : "grid items-start gap-4 xl:grid-cols-[245px_minmax(0,1fr)]"}>
+    {!practice && <div className="mb-3 flex flex-wrap gap-2" aria-label="Opening Academy views">
+      <button className={`${control} aria-pressed:bg-[#70d6b8]/10 aria-pressed:text-[#a8eed8]`} aria-pressed={!showLibrary} onClick={() => setShowLibrary(false)}>My Repertoire</button>
+      <button className={`${control} aria-pressed:bg-[#70d6b8]/10 aria-pressed:text-[#a8eed8]`} aria-pressed={showLibrary} onClick={() => setShowLibrary(true)}>Built-in Openings</button>
+    </div>}
+    {showLibrary && !practice && <section className={card}>
+      <h2 className="font-semibold">Built-in Openings</h2>
+      <p className="mb-4 mt-1 text-sm text-[#a4b5ab]">Recorded opening lines from the Lichess Chess Openings dataset (CC0).</p>
+      {library ? <PublicOpeningLibrary library={library} repertoires={repertoires} onImport={importOpening} /> :
+        loadFailed ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm"><p>Could not load the opening library.</p><button className={control} onClick={() => setLoadFailed(false)}>Retry</button></div> :
+          <p role="status" className="text-sm text-[#a4b5ab]">Loading opening library…</p>}
+      {importError && <p role="alert" className="mt-3 text-sm text-[#f5b0a5]">{importError}</p>}
+    </section>}
+    <div className={practice || showLibrary ? "hidden" : "grid items-start gap-4 xl:grid-cols-[245px_minmax(0,1fr)]"}>
     <aside className={card}>
       <h2 className="mb-3 flex items-center gap-2 font-semibold"><BookOpen size={17} className="text-[#70d6b8]" /> Repertoires</h2>
       {(["white", "black"] as const).map((side) => <section key={side} className="mb-4">
@@ -54,7 +114,7 @@ export function PublicOpeningEditor({ repertoires, update }: { repertoires?: Pub
         <button className={`${control} flex w-full items-center justify-center gap-2 bg-[#70d6b8]/10 text-[#a8eed8]`} disabled={!repertoires || repertoires.length >= maxRepertoires || !name.trim()}><Plus size={16} /> Create repertoire</button>
       </form>
     </aside>
-    {selected ? <RepertoireBoard key={selected.id} repertoire={selected} update={update} /> :
+    {selected ? <RepertoireBoard key={selected.id} repertoire={selected} update={update} library={library} /> :
       <section className={`${card} py-12 text-center`}>
         <h2 className="font-semibold">{repertoires ? "Build your first repertoire" : "Loading your repertoire library"}</h2>
         {repertoires && <p className="mt-2 text-sm text-[#a4b5ab]">Choose a side and name your repertoire to start adding moves.</p>}
@@ -63,13 +123,22 @@ export function PublicOpeningEditor({ repertoires, update }: { repertoires?: Pub
   </>;
 }
 
-function RepertoireBoard({ repertoire, update }: { repertoire: PublicRepertoire; update: Update }) {
+function RepertoireBoard({ repertoire, update, library }: { repertoire: PublicRepertoire; update: Update; library?: OpeningLibrary }) {
   const [selectedId, setSelectedId] = useState(repertoireRoot);
   const [preferred, setPreferred] = useState<Map<string, string>>(() => new Map());
   const [black, setBlack] = useState(repertoire.color === "black");
   const [rename, setRename] = useState<string | null>(null);
   const positions = useMemo(() => repertoirePositions(repertoire.moves), [repertoire.moves]);
   const current = positions.get(selectedId) ?? positions.get(repertoireRoot)!;
+  const recognized = useMemo(() => {
+    if (!library) return [];
+    const path = [];
+    for (let node = positions.get(current.id); node?.move; node = positions.get(node.parent!)) {
+      const { from, to, promotion } = node.move;
+      path.push(from + to + (promotion ?? ""));
+    }
+    return library.recognize(path.reverse());
+  }, [library, positions, current.id]);
   function select(id: string) {
     const path = new Map(preferred);
     for (let node = positions.get(id); node?.parent; node = positions.get(node.parent)) {
@@ -127,7 +196,9 @@ function RepertoireBoard({ repertoire, update }: { repertoire: PublicRepertoire;
   return <section className={card}>
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0"><p className="text-xs font-medium capitalize text-[#82ceb7]">{repertoire.color} repertoire</p>
-        <h2 className="break-words text-xl font-semibold">{repertoire.name}</h2></div>
+        <h2 className="break-words text-xl font-semibold">{repertoire.name}</h2>
+        {recognized.length > 0 && <p className="mt-1 break-words text-xs text-[#a4b5ab]">{recognized.map(({ eco, name }) => `${eco} · ${name}`).join(" / ")}</p>}
+      </div>
       <div className="flex gap-2">
         <button className={control} onClick={() => setRename(repertoire.name)}>Rename</button>
         <button className={`${control} text-[#f5b0a5]`} onClick={remove}>Delete</button>

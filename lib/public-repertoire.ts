@@ -43,6 +43,31 @@ export function addRepertoireMove(repertoire: PublicRepertoire, parent: string, 
   return { repertoire: { ...repertoire, moves: [...repertoire.moves, edge] }, id };
 }
 
+export function mergeRepertoireLines(repertoire: PublicRepertoire, lines: readonly (readonly string[])[], nextId: () => string) {
+  const moves = [...repertoire.moves];
+  const existing = new Map(moves.map((edge) => [moveKey(edge.parent, edge), edge.id]));
+  for (const line of lines) {
+    const chess = new Chess();
+    let parent = repertoireRoot;
+    for (const uci of line) {
+      const { from, to, promotion } = chess.move(uci);
+      const move = { from, to, ...(promotion && { promotion }) };
+      const key = moveKey(parent, move);
+      const saved = existing.get(key);
+      if (saved) {
+        parent = saved;
+      } else {
+        if (moves.length >= maxRepertoireMoves) throw new Error("This import exceeds the 600-move limit. Select fewer lines or use a new repertoire.");
+        const id = nextId();
+        moves.push({ ...move, id, parent });
+        existing.set(key, id);
+        parent = id;
+      }
+    }
+  }
+  return { ...repertoire, moves };
+}
+
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const validId = (id: unknown): id is string => typeof id === "string" && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id);
 const validSquare = (square: unknown): square is string => typeof square === "string" && /^[a-h][1-8]$/.test(square);
