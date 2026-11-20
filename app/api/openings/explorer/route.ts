@@ -1,3 +1,4 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { loadPersonalExplorerData, loadRepertoireExplorerMoves } from "@/lib/opening-explorer-db";
@@ -13,6 +14,8 @@ const ratingGroups = ["0", "1000", "1200", "1400", "1600", "1800", "2000", "2200
 const monthValue = (value: string) => /^\d{4}(?:-(?:0[1-9]|1[0-2]))?$/.test(value);
 
 export async function GET(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const query = new URL(request.url).searchParams;
   const source = query.get("source") as ExplorerSource | null;
   const fen = validateExplorerFen(query.get("fen") ?? "");

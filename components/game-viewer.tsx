@@ -244,7 +244,7 @@ export function GameViewer() {
     if (!path.length) return;
     try {
       const chess = new Chess(root.fen);
-      chess.header("Event", "Grandmaster Blueprint explored variation");
+      chess.header("Event", "KnightForge explored variation");
       chess.header("White", meta.White || "Analysis White"); chess.header("Black", meta.Black || "Analysis Black"); chess.header("Result", "*");
       if (root.fen !== new Chess().fen()) { chess.header("SetUp", "1"); chess.header("FEN", root.fen); }
       for (const node of path) chess.move({ from: node.from!, to: node.to!, promotion: node.promotion ?? "q" });

@@ -1,4 +1,4 @@
-# Grandmaster Blueprint — Project specification
+# KnightForge — Project specification
 
 ## Product goal
 

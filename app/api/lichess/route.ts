@@ -1,3 +1,4 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { limits, LichessError, lookupLichessUser, parseUsername, speeds, syncLichessGames } from "@/lib/lichess";
@@ -17,6 +18,8 @@ function errorResponse(error: unknown) {
 }
 
 export async function GET() {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   try {
     const settings = await prisma.lichessSettings.findUnique({ where: { id: settingsId } });
     return NextResponse.json({ settings });
@@ -27,6 +30,8 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   try {
     const body = await request.json().catch(() => null);
     const settings = await lookupLichessUser(parseUsername(body?.username));
@@ -44,6 +49,8 @@ export async function PUT(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const body = await request.json().catch(() => null);
   const speed = speeds.find((value) => value === body?.speed);
   const limit = limits.find((value) => value === body?.limit);

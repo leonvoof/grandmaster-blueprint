@@ -28,7 +28,7 @@ export function Onboarding() {
   }
 
   return <div className="mx-auto max-w-[980px] py-5 sm:py-10">
-    <div className="mb-8 flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#7655dc]/15 text-[#aa91ff]"><Crown size={21} /></span><div><div className="text-[12px] font-semibold">Grandmaster Blueprint</div><div className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-[#777582]">Your training starts here</div></div></div>
+    <div className="mb-8 flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#7655dc]/15 text-[#aa91ff]"><Crown size={21} /></span><div><div className="text-[12px] font-semibold">KnightForge</div><div className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-[#777582]">Your training starts here</div></div></div>
     <div className="grid overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b] lg:grid-cols-[1.02fr_0.98fr]">
       <div className="border-b border-white/[0.07] p-7 sm:p-10 lg:border-b-0 lg:border-r">
         <div className="text-[10px] font-semibold uppercase tracking-[0.19em] text-[#a58aff]">01 / Player profile</div>

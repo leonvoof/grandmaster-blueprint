@@ -1,3 +1,4 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { listMistakeReviews, ReviewValidationError, saveMistakeReviewEvent } from "@/lib/mistake-review";
@@ -6,6 +7,8 @@ export const runtime = "nodejs";
 type Context = { params: Promise<{ gameId: string }> };
 
 export async function GET(_request: Request, { params }: Context) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const { gameId } = await params;
   try {
     if (!await prisma.chessGame.findUnique({ where: { id: gameId }, select: { id: true } })) return NextResponse.json({ error: "Saved game not found." }, { status: 404 });
@@ -14,6 +17,8 @@ export async function GET(_request: Request, { params }: Context) {
 }
 
 export async function POST(request: Request, { params }: Context) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const { gameId } = await params;
   const body: unknown = await request.json().catch(() => null);
   try {

@@ -1,3 +1,4 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { AnalysisValidationError, listGameAnalyses, savePositionAnalysis } from "@/lib/game-analysis";
@@ -6,6 +7,8 @@ export const runtime = "nodejs";
 type Context = { params: Promise<{ gameId: string }> };
 
 export async function GET(_request: Request, { params }: Context) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const { gameId } = await params;
   try {
     if (!await prisma.chessGame.findUnique({ where: { id: gameId }, select: { id: true } })) {
@@ -18,6 +21,8 @@ export async function GET(_request: Request, { params }: Context) {
 }
 
 export async function POST(request: Request, { params }: Context) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const { gameId } = await params;
   const body: unknown = await request.json().catch(() => null);
   try {

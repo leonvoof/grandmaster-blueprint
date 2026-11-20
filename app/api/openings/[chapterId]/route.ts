@@ -1,3 +1,4 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { Chess } from "chess.js";
 import { prisma } from "@/lib/prisma";
@@ -5,6 +6,8 @@ import { lineIdentity } from "@/lib/opening-tree";
 export const runtime = "nodejs";
 type Context = { params: Promise<{ chapterId: string }> };
 export async function PATCH(request: Request, { params }: Context) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const { chapterId } = await params;
   const body = await request.json().catch(() => null);
   if (!body || typeof body.action !== "string") return NextResponse.json({ error: "Invalid request." }, { status: 400 });

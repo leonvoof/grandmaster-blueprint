@@ -1,11 +1,16 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export async function GET() {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   try { return NextResponse.json({ repertoires: await prisma.openingRepertoire.findMany({ include: { chapters: { include: { lines: true, notes: true }, orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "asc" } }) }); }
   catch { return NextResponse.json({ error: "Could not load repertoires." }, { status: 500 }); }
 }
 export async function POST(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const body = await request.json().catch(() => null);
   if (!body || typeof body.name !== "string" || !body.name.trim() || !["White", "Black"].includes(body.side)) return NextResponse.json({ error: "Enter a repertoire name and side." }, { status: 400 });
   try { return NextResponse.json({ repertoire: await prisma.openingRepertoire.create({ data: { name: body.name.trim(), side: body.side } }) }); }

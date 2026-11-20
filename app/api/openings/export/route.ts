@@ -1,8 +1,11 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exportOpeningDocument } from "@/lib/opening-export";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const params = new URL(request.url).searchParams;
   const chapterId = params.get("chapterId");
   const repertoireId = params.get("repertoireId");

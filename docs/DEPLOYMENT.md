@@ -1,8 +1,10 @@
-# Vercel + Neon deployment preparation audit
+# KnightForge deployment
 
 ## Status
 
 SQLite and PostgreSQL builds are supported locally. The SQLite-to-PostgreSQL transfer tool has been verified locally. Cloud deployment and transfer of real records are later steps.
+
+For a no-login site, follow **KnightForge public mode** below. The Neon and authenticated setup in this guide is for the private workspace.
 
 Step 2 used disposable local databases and synthetic records. The original SQLite database has a verified local backup.
 
@@ -89,7 +91,7 @@ To repeat the synthetic integration test, use a fresh migrated loopback database
 - Local setup: copy `.env.example` to `.env.local`; set `AUTH_SECRET` to `openssl rand -base64 32`, choose `AUTH_USERNAME`, and generate `AUTH_PASSWORD_HASH` from a strong password with `GMB_SETUP_PASSWORD='…' node scripts/hash-password.mjs`. Keep `.env.local` out of Git. Set the same three server-only variables in Vercel later. Missing variables fail closed (login cannot authenticate); there is no fallback password.
 - Limitation: failed-login throttling is in-memory and therefore best-effort across serverless instances. Production launch is blocked until Vercel Authentication protects **All Deployments** (production and previews) or a separately verified shared protection mechanism is in place. This per-process throttle is not an internet-facing perimeter. No database user table or auth migration was added.
 
-## Final Vercel launch preparation
+## Private Vercel launch preparation
 
 ### Public GitHub repository setup
 
@@ -179,3 +181,70 @@ Some Lichess and Opening Explorer caches/locks remain process-local. On a server
 - With `VERCEL=1` and synthetic credentials, the isolated production app verified 13 private GET API paths return 401, private `/games` redirects when signed out, `/login` is public, credentials issue an encrypted session, logout clears the session, and a tampered session is rejected. Authenticated `/games` and `/openings` requests returned 200. A cross-origin write returned 403. An HTTPS `AUTH_URL` simulation verified the session cookie's `Secure`, `HttpOnly`, `SameSite=Lax`, and eight-hour expiry attributes. This is an Auth.js production-runtime smoke test, not a live Vercel access-gate test.
 - The built app served `stockfish-19-lite-single.js` (28,230 bytes) and `stockfish-19-lite-single.wasm` (1,845,971 bytes) with HTTP 200. The existing engine tests execute a real WASM search. No real games or other user records were used in the smoke-test database.
 - Neon TLS/pooler, actual Vercel Authentication All Deployments behavior, phone/desktop deployment access, and live Lichess service calls are not verifiable without creating resources. They remain launch checklist actions. The app workspace is not a Git repository, so there is no commit history to audit; `.gitignore` excludes `.env*` except `.env.example`, database files/backups, and `.vercel/`. Before creating/pushing a repository, run `git status` and `git ls-files` checks described in the launch checklist.
+
+## KnightForge public mode
+
+Set `GMB_SITE_MODE=public` for both build and runtime. Local mode defaults to the existing authenticated workspace. A Vercel production deployment with a missing or invalid mode returns 404. A Vercel Preview deployment accepts public mode or returns 404, including when configured as private. Keep Vercel system environment variables enabled so the app receives `VERCEL_ENV`.
+
+### Route and data inventory
+
+**A** is public read-only content, **B** is anonymous work confined to the visitor's browser, and **C** is private server functionality. Public mode accepts only GET and HEAD on the listed public pages and static assets. It has zero public API endpoints.
+
+| Route or operation | Class | Public behavior |
+| --- | --- | --- |
+| `/` | A | Public landing page. The private dashboard's Prisma profile lookup and onboarding branch are C and skipped. |
+| `/games`, `/analysis` | B | Legal chessboard, PGN replay, FEN loading, browser-worker Stockfish and local saved PGNs. |
+| `/openings` | B | Recall a browser-local PGN main line. The private Opening Academy and database scheduling are C. |
+| `/tactics` | A, B | Eight bundled, legally validated rows from the [CC0 Lichess Puzzle Database](https://database.lichess.org/#puzzles). Solving and completion counts use browser storage. |
+| `/_next/static/*`, `/favicon.ico`, five named `/stockfish/19.0.1/*` assets | A | Read-only application and worker files. No arbitrary paths in the Stockfish directory are served. |
+| `/login`, `/api/auth/*` GET/POST | C | Private login, credential callbacks, session reads and logout are unavailable. |
+| `/api/profile` GET/POST | C | Reads/upserts the private player profile. |
+| `/api/games` GET/POST | C | Lists and imports private PGNs, with fingerprint deduplication. |
+| `/api/games/[gameId]/analyses` GET/POST | C | Reads/writes stored Stockfish analysis. |
+| `/api/games/[gameId]/reviews` GET/POST | C | Reads/writes mistake review attempts and reflections. |
+| `/api/lichess` GET/PUT/POST | C | Reads/writes account settings and syncs public Lichess games into the private database. |
+| `/api/openings` GET/POST, `/api/openings/chapters` POST | C | Lists/creates repertoires and creates chapters. |
+| `/api/openings/[chapterId]` PATCH | C | Adds, edits, or deletes private lines and saves notes. |
+| `/api/openings/import` POST, `/api/openings/export` GET | C | Imports and exports private repertoires. |
+| `/api/openings/explorer` GET | C | Queries personal games or reads upstream data using server credentials. |
+| `/api/openings/training` GET/POST | C | Reads/writes spaced repetition positions, schedules, and history. |
+| `/api/tactics` GET, `/api/tactics/import` POST, `/api/tactics/attempts` GET/POST | C | Queries the private collection and attempt history and writes puzzles or attempts. |
+| `/api/weaknesses` GET, `/weaknesses` | C | Reads game and analysis records for the private report. |
+| `/calculation`, `/strategy`, `/endgames`, `/otb-training`, `/coach`, `/progress`, unknown routes | C | Existing unfinished routes are omitted from public navigation. Other paths fail closed. |
+
+There are no Next.js server actions. Login's form handler is client-side and uses the private Auth.js endpoints. The API handlers independently reject non-private modes, and the Prisma accessor refuses to initialize outside private mode. These controls apply even if a public deployment is accidentally given a connection string. Do not provision one.
+
+Browser-only data is per origin and browser profile. KnightForge stores PGNs and completion counts in localStorage and supports a validated 256 KB JSON backup. Saving is limited to 40 PGNs and a single game or opening main line per import. Download a backup before clearing site data or changing domains. Import replaces browser progress after confirmation. Temporary engine cache entries are outside the backup. Public mode does not provide Lichess sync, private mistake reviews, database-backed analysis, repertoire editing/notes, spaced repetition, or profile statistics.
+
+### Public release procedure
+
+1. Review `git status --short` and `git diff`. When approved, stage the intended files, run `git diff --cached --stat`, commit, and check `git remote -v` before `git push origin HEAD` to a review branch. Pushing to a Vercel-connected repository may trigger a deployment. Keep the existing protection enabled.
+2. Prefer a **separate** Vercel project for the public site so older private deployments and their credentials remain protected. Use the same PostgreSQL build command. Set `GMB_SITE_MODE=public` in Preview and Production. Leave `DATABASE_URL`, `DIRECT_URL`, `GMB_TRANSFER_POSTGRES_URL`, Auth.js credentials, and `LICHESS_API_TOKEN` unset. No database initialization or transfer is required. Avoid shared environment variable groups and Neon integrations on this project.
+3. Verify the protected Preview and Production artifacts. With the outer gate satisfied, the landing page and four public workspaces must function without an app session. Test real worker execution, data persistence after refresh, backup/restore, and 404 responses for private APIs even with cookies and unsafe methods. Verify no public deployment inherited private credentials.
+4. If renaming a Vercel project, open **Project Settings → General → Project Name** and save `knightforge` if available. Verify Domains and any integrations separately. Use JSON backup/restore if the origin changes. [Vercel project rename guide](https://vercel.com/kb/guide/how-do-i-change-the-name-of-my-vercel-project)
+5. Only after successful verification and explicit release approval, disable **Vercel Authentication** under **Deployment Protection** on the public-only project. Verify all deployments in that project are public-mode artifacts with no private credentials before changing the toggle, which applies to older deployments as well. Keep the private project's gate on. Verify signed-out access and private-route denials from a clean browser. [Vercel Authentication settings](https://vercel.com/docs/deployment-protection/methods-to-protect-deployments/vercel-authentication)
+6. To roll back a public release, restore Vercel Authentication first and redeploy a known-good public artifact. Use the existing private project or local private mode for the authenticated workspace. For private Vercel Production, explicitly set `GMB_SITE_MODE=private` and keep **All Deployments** protection. Browser backups can be restored by visitors on the public site. Rollback requires no database changes.
+
+### Exact Vercel Production configuration for the no-login release
+
+Use a dedicated Vercel project connected to the reviewed KnightForge repository, with the repository root as **Root Directory** and **Next.js** as the framework preset. Keep the Vercel-provided build command from `vercel.json`:
+
+```sh
+GMB_DB_PROVIDER=postgresql npm run build
+```
+
+Set this one application environment variable for **Production**:
+
+| Name | Value | Scope |
+| --- | --- | --- |
+| `GMB_SITE_MODE` | `public` | Production; set Preview to `public` only when intentionally testing public previews |
+
+`VERCEL_ENV` is supplied by Vercel and must remain enabled. No database or authentication environment variable is required by public mode. In particular, do **not** configure `DATABASE_URL`, `DIRECT_URL`, `GMB_TRANSFER_POSTGRES_URL`, `AUTH_SECRET`, `AUTH_USERNAME`, `AUTH_PASSWORD_HASH`, or `LICHESS_API_TOKEN` in the public project. Keep any existing values only on the separate private project. Public mode refuses Prisma access even if a database URL is accidentally present, but omitting private credentials is still required defense in depth.
+
+The build command selects the PostgreSQL-generated Prisma Client because that is the project's Vercel build target; it does not connect to a database or run migrations. It does not activate public mode. `GMB_SITE_MODE=public` is read by server routes at runtime. In Vercel Production, an absent or invalid `GMB_SITE_MODE` returns 404. If Vercel system environment variables are unavailable outside Vercel, the local default is the authenticated private mode, never anonymous public mode. Preview with absent, invalid, or `private` mode returns 404. Thus, a Preview deployment has no route to Production private data, and the recommended Preview environment has no database credentials in the first place.
+
+Keep **Vercel Authentication** enabled while preparing and verifying this release. Before disabling it, test the deployed Production and Preview artifacts while the gate is still on, then complete the separate, explicit approval step in the release procedure above. Disabling the gate is not part of this preparation.
+
+### Local verification of the public build
+
+TypeScript, lint, all 92 tests, and the public PostgreSQL production build passed. Headless Chrome verified the public workspaces, Stockfish search, local persistence, JSON restore across profiles, and invalid backup rejection. A disposable PostgreSQL database confirmed that 266 private API requests were refused even with a valid private session, and that all 14 database tables remained unchanged. The Preview checks simulated Vercel environment variables locally. Repeat the launch checks on the protected hosted artifact before releasing it.

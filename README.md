@@ -1,4 +1,4 @@
-# Grandmaster Blueprint
+# KnightForge
 
 A local-first chess training workspace for a player around 1800 Lichess Classical aiming toward Candidate Master (2200 FIDE Standard).
 
@@ -30,3 +30,7 @@ Useful database commands: `npm run db:push` and `npm run db:studio`.
 ## Current phase
 
 The application includes persistent onboarding, saved PGN games, local Stockfish analysis, Lichess game syncing, opening repertoire management, recall training, spaced repetition, and a mastery dashboard. Explorer statistics identify whether they come from personal saved games, Lichess rated games, or the Lichess Masters database. See [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md) for the product roadmap and [docs/HANDOFF.md](docs/HANDOFF.md) for implementation status.
+
+## Public mode
+
+KnightForge can run without accounts or database access with `GMB_SITE_MODE=public` for build and runtime. Visitors can replay games, use Stockfish, recall PGN opening lines, and solve sourced puzzles. Browser progress can be backed up and restored with JSON. See [Deployment](docs/DEPLOYMENT.md#knightforge-public-mode) for the route inventory and release checks.

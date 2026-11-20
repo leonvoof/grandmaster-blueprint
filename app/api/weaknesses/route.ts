@@ -1,3 +1,4 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { MAX_DEPTH, MIN_DEPTH } from "@/lib/stockfish/engine";
 import { timeControls, type TimeControl } from "@/lib/weakness-analysis";
@@ -7,6 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const params = new URL(request.url).searchParams;
   const timeControl = params.get("timeControl") ?? "classical";
   const player = params.get("player")?.trim();

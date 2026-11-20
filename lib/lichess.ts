@@ -44,7 +44,7 @@ async function withLichess<T>(path: string, accept: string, consume: (response: 
     let response: Response;
     try {
       response = await fetch(`https://lichess.org${path}`, {
-        headers: { Accept: accept, "User-Agent": "Grandmaster Blueprint" },
+        headers: { Accept: accept, "User-Agent": "KnightForge" },
         cache: "no-store",
         redirect: "error",
         signal: controller.signal,

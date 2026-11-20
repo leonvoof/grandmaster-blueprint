@@ -5,10 +5,21 @@ import { GameViewer } from "@/components/game-viewer";
 import { WeaknessReport } from "@/components/weakness-report";
 import { OpeningAcademy } from "@/components/opening-academy";
 
-export function generateStaticParams() { return Object.keys(pageDetails).map((section) => ({ section })); }
+import { PublicWorkspace } from "@/components/public-workspace";
+import { siteMode } from "@/lib/site-mode";
+
+export const dynamic = "force-dynamic";
 
 export default async function SectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
+  const mode = siteMode();
+  if (mode === "blocked") notFound();
+  if (mode === "public") {
+    if (section === "games" || section === "analysis" || section === "openings" || section === "tactics") {
+      return <PublicWorkspace section={section} />;
+    }
+    notFound();
+  }
   const details = pageDetails[section];
   if (!details) notFound();
   if (section === "weaknesses") return <WeaknessReport />;

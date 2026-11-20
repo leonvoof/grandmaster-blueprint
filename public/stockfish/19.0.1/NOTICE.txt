@@ -1,4 +1,4 @@
-Grandmaster Blueprint serves the unmodified Stockfish.js 19.0.1 Lite single-threaded WebAssembly engine.
+KnightForge serves the unmodified Stockfish.js 19.0.1 Lite single-threaded WebAssembly engine.
 Copyright © 2026 Chess.com, LLC. Based on Stockfish by T. Romstad, M. Costalba,
 J. Kiiski, G. Linscott and other contributors. Lite network by Chris Bao (sscg13).
 

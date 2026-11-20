@@ -1,4 +1,4 @@
-# Grandmaster Blueprint project rules
+# KnightForge project rules
 
 - Read existing files before making changes.
 - Never rebuild working features unnecessarily.

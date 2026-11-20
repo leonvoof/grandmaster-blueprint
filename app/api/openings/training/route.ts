@@ -1,3 +1,4 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -44,6 +45,8 @@ function isReviewRequest(value: unknown): value is ReviewRequest {
 }
 
 export async function GET(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const query = new URL(request.url).searchParams;
   const repertoireId = query.get("repertoireId");
   const chapterId = query.get("chapterId");
@@ -118,6 +121,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const body: unknown = await request.json().catch(() => null);
   if (!isReviewRequest(body)) {
     return NextResponse.json({ error: "Review outcome is malformed." }, { status: 400 });

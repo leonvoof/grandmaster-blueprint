@@ -1,7 +1,10 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parsePuzzleRow, type PuzzleInput } from "@/lib/tactics";
 export async function POST(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   try {
     const body = await request.json();
     if (!Array.isArray(body.puzzles) || body.puzzles.length > 500) return NextResponse.json({ error: "Provide up to 500 puzzle rows per import." }, { status: 400 });

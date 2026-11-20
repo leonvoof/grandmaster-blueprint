@@ -1,14 +1,19 @@
+import { privateRouteDisabled } from "@/lib/site-mode";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const profile = await prisma.playerProfile.findUnique({ where: { id: "local-player" } });
   return NextResponse.json({ profile });
 }
 
 export async function POST(request: Request) {
+  const disabled = privateRouteDisabled();
+  if (disabled) return disabled;
   const body: unknown = await request.json();
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid profile." }, { status: 400 });
   const data = body as Record<string, unknown>;
