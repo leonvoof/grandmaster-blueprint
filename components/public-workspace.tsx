@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Chess, type Square } from "chess.js";
-import { Chessboard } from "react-chessboard";
+import { Chess } from "chess.js";
+import { PublicBoard as Board, type BoardMove as Move } from "@/components/public-board";
+import { PublicOpeningEditor } from "@/components/public-opening-editor";
 import { GameViewer } from "@/components/game-viewer";
 import { exportBrowserReviews, restoreBrowserReviews } from "@/lib/browser-game-review";
 import { buildTrainingTree, playAnswer, startExercise, type Exercise } from "@/lib/opening-trainer";
@@ -12,33 +13,7 @@ import { buildPuzzleNextUrl, parseNextPuzzle, parsePuzzleRow, puzzleDifficultyOp
 
 
 const panel = "rounded-2xl border border-white/10 bg-[#11131b] p-4 sm:p-6";
-type Move = { from: Square; to: Square; promotion?: string };
 type Update = (change: (previous: PublicProgress) => PublicProgress) => boolean;
-
-function Board({ fen, move, black = false }: { fen: string; move: (move: Move) => boolean; black?: boolean }) {
-  const [selection, setSelection] = useState<{ fen: string; square: Square } | null>(null);
-  const selected = selection?.fen === fen ? selection.square : null;
-  function click(square: Square) {
-    const position = new Chess(fen);
-    if (position.get(square)?.color === position.turn()) {
-      setSelection({ fen, square });
-      return;
-    }
-    if (!selected) return;
-    const promotion = position.moves({ square: selected, verbose: true }).some((candidate) => candidate.to === square && candidate.promotion);
-    if (!promotion) move({ from: selected, to: square });
-    setSelection(null);
-  }
-  return <div className="mx-auto w-full max-w-[560px]">
-    <Chessboard position={fen} boardOrientation={black ? "black" : "white"} animationDuration={150}
-      onSquareClick={click}
-      customSquareStyles={selected ? { [selected]: { backgroundColor: "rgba(139, 92, 246, 0.55)" } } : {}}
-      onPieceDrop={(from, to) => { setSelection(null); return move({ from, to }); }}
-      onPromotionCheck={(from, to) => new Chess(fen).moves({ square: from, verbose: true }).some((candidate) => candidate.to === to && candidate.promotion)}
-      onPromotionPieceSelect={(piece, from, to) => Boolean(piece && from && to && move({ from, to, promotion: piece[1].toLowerCase() }))} />
-    <p className="mt-2 text-sm text-gray-400">{new Chess(fen).turn() === "w" ? "White" : "Black"} to move</p>
-  </div>;
-}
 
 export function PublicWorkspace({ section }: { section: "games" | "analysis" | "openings" | "tactics" }) {
   const [progress, setProgress] = useState<PublicProgress | null>(null);
@@ -69,9 +44,12 @@ export function PublicWorkspace({ section }: { section: "games" | "analysis" | "
       if (file.size > maxBackupBytes) throw new Error("Backup exceeds the size limit.");
       const text = await file.text();
       const data = decodeProgress(text);
+      const backup = JSON.parse(text);
       if (!window.confirm("Replace the public workspace progress in this browser with this backup?")) return;
-      await restoreBrowserReviews(JSON.parse(text).gameReview, () => { saveProgress(localStorage, data); });
-      setProgress(data);
+      await restoreBrowserReviews(backup.gameReview, () => {
+        if (backup.repertoires === undefined) data.repertoires = readProgress(localStorage).repertoires;
+        setProgress(saveProgress(localStorage, data));
+      });
       setRestoreVersion((version) => version + 1);
       setMessage("Backup restored.");
     } catch { setMessage("Could not restore this file. Existing progress was preserved."); }
@@ -88,15 +66,16 @@ export function PublicWorkspace({ section }: { section: "games" | "analysis" | "
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not export the browser backup."); }
   }
-  const title = { games: "Games", analysis: "Analysis board", openings: "Opening recall", tactics: "Tactics" }[section];
+  const title = { games: "Games", analysis: "Analysis board", openings: "Opening Academy", tactics: "Tactics" }[section];
   const gamesWorkspace = section === "games" || section === "analysis";
   return <div className={gamesWorkspace ? "knightforge-public-games" : "space-y-6"}>
     <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
     {section === "tactics" ? <Tactics progress={progress} update={update} /> :
-      <PgnWorkspace key={section} training={section === "openings"} lichessImport={section === "games"} progress={progress} update={update} restoreVersion={restoreVersion} />}
+      section === "openings" ? <PublicOpeningEditor key={restoreVersion} repertoires={progress?.repertoires} update={update} /> :
+      <PgnWorkspace key={section} training={false} lichessImport={section === "games"} progress={progress} update={update} restoreVersion={restoreVersion} />}
     <details className={`${panel} ${gamesWorkspace ? "knightforge-backup-panel" : ""}`}>
       <summary className="cursor-pointer font-semibold">Backup &amp; restore</summary>
-      <p className="my-3 max-w-2xl text-sm text-gray-400">Saved games, game reviews, reflections, opening lines, and completion counts stay in this browser. They do not sync across devices and may be lost when browser storage is cleared. Engine cache entries are temporary and are excluded from backups.</p>
+      <p className="my-3 max-w-2xl text-sm text-gray-400">Saved games, game reviews, reflections, opening lines, repertoires, and completion counts stay in this browser. They do not sync across devices and may be lost when browser storage is cleared. Engine cache entries are temporary and are excluded from backups.</p>
       <div className="flex flex-wrap items-center gap-4">
         <button className="btn" disabled={!progress} onClick={download}>Download progress</button>
         <label className="text-sm">Restore progress <input type="file" accept=".json,application/json" onChange={(event) => { void restore(event.target.files?.[0]); event.target.value = ""; }} /></label>

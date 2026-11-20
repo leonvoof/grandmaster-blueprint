@@ -59,7 +59,7 @@ test("browser reload recovers progress and JSON backup can be restored in anothe
   const game = { kind: "opening", name: "Test line", pgn: "1. e4 e5 2. Nf3 *" };
   const snapshot = { version: 1, games: [game], solves: { [puzzles[0].id]: 2 }, recalls: 1 };
   saveProgress(first, snapshot);
-  const normalized = { ...snapshot, tacticsAttempts: [], tacticsTotals: { attempted: 0, solved: 0, cleanSolved: 0, currentCleanStreak: 0, bestCleanStreak: 0 } };
+  const normalized = { ...snapshot, repertoires: [], tacticsAttempts: [], tacticsTotals: { attempted: 0, solved: 0, cleanSolved: 0, currentCleanStreak: 0, bestCleanStreak: 0 } };
   assert.deepEqual(readProgress(first), normalized);
   assert.equal(readProgress(second).recalls, 0);
   assert.deepEqual(saveProgress(second, decodeProgress(first.getItem(progressKey))), normalized);

@@ -11,7 +11,7 @@ export function siteMode() {
   return resolveSiteMode(process.env.GMB_SITE_MODE, process.env.VERCEL_ENV);
 }
 
-export const publicPages = ["/", "/games", "/analysis", "/tactics"] as const;
+export const publicPages = ["/", "/games", "/analysis", "/tactics", "/openings"] as const;
 
 const stockfishAssets = new Set(["stockfish-19-lite-single.js", "stockfish-19-lite-single.wasm", "NOTICE.txt", "AUTHORS.txt", "Copying.txt"]);
 

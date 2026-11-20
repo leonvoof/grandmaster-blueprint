@@ -15,7 +15,7 @@ export default async function SectionPage({ params }: { params: Promise<{ sectio
   const mode = siteMode();
   if (mode === "blocked") notFound();
   if (mode === "public") {
-    if (section === "games" || section === "analysis" || section === "tactics") {
+    if (section === "games" || section === "analysis" || section === "tactics" || section === "openings") {
       return <PublicWorkspace section={section} />;
     }
     notFound();
