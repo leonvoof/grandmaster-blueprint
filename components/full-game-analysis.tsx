@@ -168,7 +168,23 @@ export function FullGameAnalysis({ browserLocal, gameId, positions, selectedPly,
     {!reviewOpen && <div className="border-b border-white/[0.07] bg-[#0d0f16] px-4 py-3" aria-live="polite">
       <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">Selected position · White perspective</p><p className="mt-0.5 text-xl font-semibold tabular-nums text-white">{visibleAnalysis ? visibleAnalysis.score?.kind === "mate" ? `${visibleAnalysis.score.value > 0 ? "White" : visibleAnalysis.score.value < 0 ? "Black" : ""} ${visibleAnalysis.score.value === 0 ? "Mate" : `mates in ${Math.abs(visibleAnalysis.score.value)}`}` : visibleAnalysis.score ? `${visibleAnalysis.score.value > 0 ? "+" : ""}${(visibleAnalysis.score.value / 100).toFixed(2)}` : visibleAnalysis.terminal ?? "Evaluation unavailable" : browserLocal ? "Analyzing position…" : "No saved evaluation"}</p></div>
       {visibleAnalysis?.bestMove && <div className="text-right"><p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">Best move</p><p className="mt-0.5 font-mono text-lg text-[#c7b8ff]">{visibleAnalysis.bestMove}</p></div>}</div>
-      {classificationByPly.get(selectedPly)?.classification ? <p className={`mt-2 text-xs ${classificationColor(classificationByPly.get(selectedPly)!.classification!)}`}><strong>{classificationIcon(classificationByPly.get(selectedPly)!.classification!)} {classificationByPly.get(selectedPly)!.classification}</strong> · {classificationByPly.get(selectedPly)!.reason}</p> : selectedPly > 0 && <p className="mt-2 text-xs text-gray-500">{classificationByPly.get(selectedPly)?.reason ?? "No compatible classification evidence for this move."}</p>}
+      {selectedPly > 0 && (() => {
+        const move = classificationByPly.get(selectedPly);
+        if (!move) return null;
+        const lostPawns = move.lossCp === null ? null : Math.max(0, move.lossCp / 100);
+        const explanation = move.classification === "Best" ? "This move matches the engine's top continuation."
+          : move.classification === "Excellent" ? "The move keeps the position close to the engine's top choice."
+          : move.classification === "Good" ? "The move keeps most of the position's evaluation."
+          : move.classification === "Inaccuracy" ? "The move gives the opponent a better position."
+          : move.classification === "Mistake" ? "The move lets the opponent gain a clear advantage."
+          : move.classification === "Blunder" ? "The move allows a major improvement for the opponent."
+          : move.classification ? "Classification is based on the saved engine analysis." : "There is not enough compatible engine evidence to assess this move.";
+        return <div className={`mt-2 rounded-lg border border-white/[0.07] bg-black/15 p-2.5 text-xs ${move.classification ? classificationColor(move.classification) : "text-gray-400"}`}>
+          <p><strong>{move.classification ? `${classificationIcon(move.classification)} ${move.classification}` : "Unassessed"}</strong> · {explanation}{lostPawns !== null && lostPawns > 0 ? ` Estimated loss: ${lostPawns.toFixed(2)} pawns.` : ""}</p>
+          {move.bestMove && move.continuation.length > 0 && <p className="mt-1 text-gray-300">The engine recommends <strong>{move.bestMove}</strong>{move.continuation.length > 1 ? ` ${move.continuation.slice(1).join(" ")}` : ""} from the position before this move.</p>}
+          <details className="mt-1 text-gray-400"><summary className="cursor-pointer">Details</summary><p className="mt-1">{move.reason}{move.lossCp !== null ? ` Exact estimated loss: ${move.lossCp} cp.` : ""}</p></details>
+        </div>;
+      })()}
       {visibleAnalysis?.variation.length ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-gray-300"><span className="text-gray-500">Continuation</span> · {visibleAnalysis.variation.join(" ")}</p> : <p className="mt-1 text-xs text-gray-500">{visibleAnalysis ? `Depth ${visibleAnalysis.depth} · ${visibleAnalysis.engine}` : "Analyze this game to save evaluations and engine continuations."}</p>}
     </div>}
     {!reviewOpen && !browserLocal && <details className="border-b border-white/[0.07] px-4 py-2"><summary className="cursor-pointer text-xs font-medium text-gray-300">Analyze selected position with Stockfish</summary><StockfishAnalysis fen={selectedPosition?.fen ?? positions[0]?.fen ?? ""} gameId={gameId} /></details>}

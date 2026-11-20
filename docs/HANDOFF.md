@@ -367,3 +367,10 @@ Run `npm install` once, then `npm run dev`. The predev hook generates Prisma Cli
 - The summary now counts classified moves directly from the same classified records used by the move list. It distinguishes games with no compatible saved analysis from analyzed games with no eligible classifications and reports partial coverage. Before analysis it prompts the user to analyze the game.
 - Replaced the default grid of zero categories with compact nonzero White/Black counts and an expandable zero-count list. Great is blue. The classification color map now consistently uses turquoise Brilliant, blue Great, green Best, light green Excellent, muted green Good, yellow Inaccuracy, orange Mistake, red Blunder, and purple Book in the move list, selected classification, and summary.
 - Targeted classification tests, TypeScript, and lint passed. The count test covers White and Black nonzero categories and correct total. No chess data or database files were changed.
+
+
+### Public Game Review wording and navigation cleanup
+
+- Replaced technical selected-move copy with a short classification explanation, pawn-equivalent loss when present, and the verified saved top continuation from before the move. Exact centipawn loss and detailed engine reasoning stay in an expandable Details section.
+- Removed Opening Recall from the public navigation and public page allowlist. Its stored progress and older backup fields remain accepted. Private Opening Academy routes and features are unchanged.
+- Verification: pending for this focused UI change.
