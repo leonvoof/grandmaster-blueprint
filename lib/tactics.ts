@@ -26,6 +26,15 @@ export function buildPuzzleNextUrl(difficulty: PuzzleDifficulty, angle: PuzzleTh
   const query = new URLSearchParams({ difficulty, angle });
   return `https://lichess.org/api/puzzle/next?${query.toString()}`;
 }
+export function visiblePuzzleThemeLabels(themes: string, attemptFinished: boolean) {
+  if (!attemptFinished) return [];
+  return themes.trim().split(/\s+/).filter(Boolean).map((theme) => theme
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Za-z])(\d)/g, "$1 $2")
+    .split(/[\s_-]+/).filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" "));
+}
 export type PuzzleInput = { id: string; fen: string; moves: string; rating: number; themes: string; setupApplied?: boolean };
 export function parseNextPuzzle(value: unknown): PuzzleInput {
   if (!value || typeof value !== "object") throw new Error("Lichess returned an invalid puzzle.");

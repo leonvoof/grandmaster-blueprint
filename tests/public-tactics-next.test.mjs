@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildPuzzleNextUrl, parseNextPuzzle, parsePuzzleRow, puzzleDifficultyOptions, puzzleThemeOptions } from "../lib/tactics.ts";
+import { buildPuzzleNextUrl, parseNextPuzzle, parsePuzzleRow, puzzleDifficultyOptions, puzzleThemeOptions, visiblePuzzleThemeLabels } from "../lib/tactics.ts";
 
 test("difficulty and theme selectors map to Lichess puzzle-next parameters", () => {
   assert.deepEqual(puzzleDifficultyOptions.map(({ label, value }) => [label, value]), [
@@ -16,6 +16,13 @@ test("difficulty and theme selectors map to Lichess puzzle-next parameters", () 
   assert.equal(request.pathname, "/api/puzzle/next");
   assert.equal(request.searchParams.get("difficulty"), "harder");
   assert.equal(request.searchParams.get("angle"), "discoveredAttack");
+});
+
+test("puzzle themes stay hidden until the attempt is finished, then render as readable labels", () => {
+  const themes = "trappedPiece advantage short middlegame mateIn1";
+  assert.deepEqual(visiblePuzzleThemeLabels(themes, false), []);
+  assert.deepEqual(visiblePuzzleThemeLabels(themes, true), ["Trapped Piece", "Advantage", "Short", "Middlegame", "Mate In 1"]);
+  assert.deepEqual(visiblePuzzleThemeLabels("fork", false), []); // Same rule applies to offline fallback puzzle metadata.
 });
 
 test("Lichess puzzle-next puzzle FEN and solution are validated as returned", () => {
