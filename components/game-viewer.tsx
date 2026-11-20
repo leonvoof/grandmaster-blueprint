@@ -7,12 +7,12 @@ import { FullGameAnalysis } from "@/components/full-game-analysis";
 import { LichessSync } from "@/components/lichess-sync";
 import { StockfishAnalysis } from "@/components/stockfish-analysis";
 import { loadGameReplay } from "@/lib/game-replay";
-import { addExplorationMove, classifyExplorationMove, createExplorationTree, explorationAnalysisIdentity, explorationAnalysisQueue, explorationArrowTarget, explorationPath, rememberExplorationPositions, selectExplorationNode, undoExplorationMove, type ExplorationNode, type ExplorationTree } from "@/lib/position-exploration";
+import { addExplorationMove, classifyExplorationMove, createExplorationTree, explorationAnalysisIdentity, explorationAnalysisQueue, explorationArrowTarget, explorationPath, normalizeExplorationAnalysis, rememberExplorationPositions, selectExplorationNode, undoExplorationMove, type ExplorationNode, type ExplorationTree } from "@/lib/position-exploration";
 import { analysisKey, cacheAnalysis, readAnalysis } from "@/lib/stockfish/cache";
 import { DEFAULT_DEPTH, ENGINE_BUILD, ENGINE_SETTINGS, MAX_DEPTH, MIN_DEPTH, runStockfish } from "@/lib/stockfish/engine";
 import { connectedPlayerColor, evaluationBarState, gameViewerPositionForKey, resolveBoardOrientation, shouldIgnoreGameViewerShortcut, whiteEvaluationFillEdge, type OrientationMode } from "@/lib/game-viewer-controls";
 import { publicExplorationTarget, rememberPath, variationEdges } from "@/lib/public-exploration";
-import { browserGameId, readBrowserVariation, saveBrowserVariation } from "@/lib/browser-game-review";
+import { browserGameId, readBrowserAnalyses, readBrowserVariation, saveBrowserVariation, type SavedAnalysis } from "@/lib/browser-game-review";
 import { validatedPgn, type PublicGame } from "@/lib/public-progress";
 import type { Analysis } from "@/lib/stockfish/position";
 
@@ -28,6 +28,16 @@ const navigationButtons = [
 
 function nodeAnalysisKey(rootFen: string, node: ExplorationNode, depth: number, gameId: string | null) {
   return explorationAnalysisIdentity(rootFen, node, depth, ENGINE_BUILD, ENGINE_SETTINGS, gameId);
+}
+
+function cacheSavedAnalysisRecords(gameId: string, records: SavedAnalysis[]) {
+  for (const record of records) {
+    if (record.engine !== ENGINE_BUILD || record.settings !== ENGINE_SETTINGS) continue;
+    try {
+      const analysis: Analysis = { engine: record.engine, depth: record.depth, score: record.scoreType && record.scoreValue !== null ? { kind: record.scoreType, value: record.scoreValue } : null, bestMove: record.bestMove, variation: JSON.parse(record.variation), ...(record.terminal && { terminal: record.terminal as Analysis["terminal"] }) };
+      cacheAnalysis(analysisKey(gameId, record.fen, record.depth), analysis);
+    } catch { /* Ignore a corrupt local record; the live worker can replace it. */ }
+  }
 }
 
 function EvaluationBar({ analysis, orientation, loading = false }: { analysis: Analysis | null; orientation: "white" | "black"; loading?: boolean }) {
@@ -79,9 +89,11 @@ export function GameViewer({ local }: { local?: {
   const [mobilePanel, setMobilePanel] = useState<"board" | "analysis">("board");
   const [reviewMode, setReviewMode] = useState(false);
   const [exploreMode, setExploreMode] = useState(browserLocal);
+  const [showOriginalReview, setShowOriginalReview] = useState(false);
   const [exploration, setExploration] = useState<ExplorationTree | null>(() => browserLocal ? createExplorationTree(new Chess().fen(), 0) : null);
   const [exploreDepth, setExploreDepth] = useState(DEFAULT_DEPTH);
   const [exploreAnalyses, setExploreAnalyses] = useState<Record<string, Analysis>>({});
+  const [savedGameAnalyses, setSavedGameAnalyses] = useState<SavedAnalysis[]>([]);
   const [exploreStatus, setExploreStatus] = useState("");
   const [exploreError, setExploreError] = useState("");
   const [exploreTargets, setExploreTargets] = useState<string[]>([]);
@@ -94,8 +106,21 @@ export function GameViewer({ local }: { local?: {
   const orientation = resolveBoardOrientation(orientationMode, browserLocal ? libraryUsername : lichessUsername, meta);
   const playerColor = connectedPlayerColor(browserLocal ? libraryUsername : lichessUsername, meta);
   const currentMove = exploreMode ? exploredNode?.from && exploredNode.to ? { from: exploredNode.from, to: exploredNode.to } : null : idx > 0 ? moves[idx - 1] : null;
-  const currentExploreAnalysisKey = exploreMode && exploredNode ? nodeAnalysisKey(explorationRootFen, exploredNode, exploreDepth, analysisGameId) : "";
-  const exploreAnalysis = exploreAnalyses[currentExploreAnalysisKey] ?? null;
+  const analysisForNode = (node: ExplorationNode | null) => {
+    if (!node) return null;
+    const nodeKey = nodeAnalysisKey(explorationRootFen, node, exploreDepth, analysisGameId);
+    const liveResult = exploreAnalyses[nodeKey];
+    if (liveResult) return liveResult;
+    const saved = savedGameAnalyses.find((record) => record.ply === node.ply && record.fen === node.fen && record.engine === ENGINE_BUILD && record.settings === ENGINE_SETTINGS && record.depth === exploreDepth);
+    if (!saved) return null;
+    try {
+      return { engine: saved.engine, depth: saved.depth, score: saved.scoreType && saved.scoreValue !== null ? { kind: saved.scoreType, value: saved.scoreValue } : null, bestMove: saved.bestMove, variation: JSON.parse(saved.variation) as string[], ...(saved.terminal && { terminal: saved.terminal as Analysis["terminal"] }) } satisfies Analysis;
+    } catch { return null; }
+  };
+  const exploreAnalysis = analysisForNode(exploredNode);
+  const selectedParent = exploredNode?.parentId && exploration ? exploration.nodes[exploredNode.parentId] : null;
+  const parentAnalysis = analysisForNode(selectedParent);
+  const exploreClassification = exploredNode && selectedParent ? classifyExplorationMove(selectedParent, exploredNode, parentAnalysis, exploreAnalysis, { inaccuracy: 50, mistake: 100, blunder: 200 }, browserLocal ? 10 : MIN_DEPTH) : null;
   const visibleAnalysis = exploreMode ? exploreAnalysis : positionAnalysis?.fen === shown ? positionAnalysis.analysis : null;
   const gamePositions = useMemo(() => [{ fen: initialFen, ply: 0, san: null }, ...moves.map((move, index) => ({ fen: move.fen, ply: index + 1, san: move.san }))], [initialFen, moves]);
   const updatePositionAnalysis = useCallback((analysis: Analysis | null, fen?: string) => setPositionAnalysis(analysis && fen ? { fen, analysis } : null), []);
@@ -120,6 +145,14 @@ export function GameViewer({ local }: { local?: {
     }).catch(() => { if (active) setLichessUsername(null); });
     return () => { active = false; };
   }, [browserLocal]);
+
+  useEffect(() => {
+    if (!browserLocal || !analysisGameId) { setSavedGameAnalyses([]); return; }
+    let active = true;
+    void readBrowserAnalyses(analysisGameId).then((records) => { if (active) { cacheSavedAnalysisRecords(analysisGameId, records); setSavedGameAnalyses(records); } })
+      .catch(() => { if (active) setSavedGameAnalyses([]); });
+    return () => { active = false; };
+  }, [browserLocal, analysisGameId]);
 
   const position = useCallback((ply: number) => setIdx(Math.max(0, Math.min(moves.length, ply))), [moves.length]);
   useEffect(() => {
@@ -157,11 +190,13 @@ export function GameViewer({ local }: { local?: {
     activeExploreJob.current?.abort();
     activeExploreJob.current = controller;
     setExploreError("");
-    const orderedIds = explorationAnalysisQueue(tree, currentId, browserLocal ? (exploredNode.parentId ? [exploredNode.parentId] : []) : exploreTargets);
+    const relatedIds = [...(exploredNode.parentId ? [exploredNode.parentId] : []), ...exploreTargets];
+    const orderedIds = explorationAnalysisQueue(tree, currentId, relatedIds);
     const publish = (nodeKey: string, cacheKey: string, analysis: Analysis) => {
-      exploreResultRef.current = { ...exploreResultRef.current, [nodeKey]: analysis };
-      setExploreAnalyses((previous) => ({ ...previous, [nodeKey]: analysis }));
-      cacheAnalysis(cacheKey, analysis);
+      const compatible = normalizeExplorationAnalysis(analysis, ENGINE_BUILD);
+      exploreResultRef.current = { ...exploreResultRef.current, [nodeKey]: compatible };
+      setExploreAnalyses((previous) => ({ ...previous, [nodeKey]: compatible }));
+      cacheAnalysis(cacheKey, compatible);
     };
     async function analyzeQueue() {
       try {
@@ -214,7 +249,8 @@ export function GameViewer({ local }: { local?: {
       const replay = loadGameReplay(text);
       setLoadedPgn(text); setLibraryUsername(username); preferredChildren.current = {};
       setReviewMode(false);
-      activeExploreJob.current?.abort(); setExploreMode(false); setExploration(null); setExploreTargets([]);
+      activeExploreJob.current?.abort(); setExploreMode(false); setShowOriginalReview(false); setExploration(null); setExploreTargets([]);
+      exploreResultRef.current = {}; setExploreAnalyses({}); setSavedGameAnalyses([]);
       setPgn(text); setAnalysisGameId(savedGameId); setMoves(replay.moves); setInitialFen(replay.initialFen);
       setIdx(0); setMeta(replay.headers); setPositionAnalysis(null); setErr(""); setMobilePanel("board");
     } catch { setErr("Could not read this PGN. Check the notation and try again."); }
@@ -312,6 +348,7 @@ export function GameViewer({ local }: { local?: {
     try {
       const chess = new Chess(fen);
       activeExploreJob.current?.abort(); setExploreMode(false); setExploration(null); setExploreTargets([]);
+      exploreResultRef.current = {}; setExploreAnalyses({}); setSavedGameAnalyses([]);
       setLoadedPgn("");
       setAnalysisGameId(null); setInitialFen(chess.fen()); setMoves([]); setIdx(0); setMeta({}); setPositionAnalysis(null); setErr("");
       if (browserLocal) { preferredChildren.current = {}; setExploration(createExplorationTree(chess.fen(), 0)); setExploreMode(true); }
@@ -323,12 +360,12 @@ export function GameViewer({ local }: { local?: {
       activeExploreJob.current?.abort();
       const line = idx < moves.length ? moves.slice(idx).map((ply) => ({ san: ply.san, fen: ply.fen, from: ply.from, to: ply.to, promotion: ply.promotion })) : [];
       const tree = browserLocal ? selectExplorationNode(exploration ?? createExplorationTree(initialFen, 0, moves), String(idx)) : createExplorationTree(shown, idx, line);
-      exploreResultRef.current = {};
-      setExploration(tree); setExploreAnalyses({}); setExploreTargets([tree.currentId]); setExploreError(""); setExploreStatus(""); setExploreMode(true); setPositionAnalysis(null);
+      if (browserLocal && analysisGameId) void readBrowserAnalyses(analysisGameId).then((records) => { cacheSavedAnalysisRecords(analysisGameId, records); setSavedGameAnalyses(records); }).catch(() => {});
+      setExploration(tree); setExploreTargets((targets) => rememberExplorationPositions(targets, tree.currentId)); setExploreError(""); setExploreStatus(""); setExploreMode(true); setPositionAnalysis(null);
     } catch (reason) { setErr(reason instanceof Error ? reason.message : "Could not start position exploration."); }
   }
   function returnToGame() {
-    activeExploreJob.current?.abort(); setPositionAnalysis(null); setExploreMode(false); if (!browserLocal) setExploration(null); setExploreTargets([]); setExploreError(""); setExploreStatus("");
+    activeExploreJob.current?.abort(); setPositionAnalysis(null); setExploreMode(false); setShowOriginalReview(false); if (!browserLocal) setExploration(null); setExploreTargets([]); setExploreError(""); setExploreStatus("");
   }
   function selectExplore(id: string) {
     setExploreError(""); setExploreStatus("Analyzing selected position…");
@@ -360,9 +397,10 @@ export function GameViewer({ local }: { local?: {
     } catch (reason) { setExploreError(reason instanceof Error ? reason.message : "Could not save the explored line."); }
     finally { setSavingVariation(false); }
   }
+  const assessmentColor = exploreClassification?.classification ? classificationSquareColor(exploreClassification.classification) : null;
   const lastMoveStyles = currentMove ? {
     [currentMove.from]: { background: "linear-gradient(0deg, rgba(165,138,255,.34), rgba(165,138,255,.34))" },
-    [currentMove.to]: { background: "linear-gradient(0deg, rgba(165,138,255,.52), rgba(165,138,255,.52))" },
+    [currentMove.to]: { background: assessmentColor ? `linear-gradient(0deg, ${assessmentColor}66, ${assessmentColor}66)` : "linear-gradient(0deg, rgba(165,138,255,.52), rgba(165,138,255,.52))", boxShadow: assessmentColor ? `inset 0 0 0 3px ${assessmentColor}` : undefined },
   } : {};
   const selected = selectedSquare?.fen === shown ? selectedSquare.square : null;
   const squareStyles = selected ? { ...lastMoveStyles, [selected]: { backgroundColor: "#a58aff99" } } : lastMoveStyles;
@@ -378,9 +416,6 @@ export function GameViewer({ local }: { local?: {
     else if (selected) publicMove(selected, square);
   }
   const explorePath = exploration ? explorationPath(exploration) : [];
-  const selectedParent = exploredNode?.parentId && exploration ? exploration.nodes[exploredNode.parentId] : null;
-  const parentAnalysis = selectedParent ? exploreAnalyses[nodeAnalysisKey(explorationRootFen, selectedParent, exploreDepth, analysisGameId)] ?? null : null;
-  const exploreClassification = exploredNode && selectedParent ? classifyExplorationMove(selectedParent, exploredNode, parentAnalysis, exploreAnalysis, { inaccuracy: 50, mistake: 100, blunder: 200 }, browserLocal ? 10 : MIN_DEPTH) : null;
   const explorationMoveLabel = (node: ExplorationTree["nodes"][string]) => {
     if (!node.san || !exploration || !node.parentId) return "Starting position";
     const parent = exploration.nodes[node.parentId];
@@ -391,10 +426,14 @@ export function GameViewer({ local }: { local?: {
     if (!exploration) return null;
     const node = exploration.nodes[id];
     const indent = node.parentId && exploration.nodes[node.parentId].children.length > 1 ? 1 : 0;
+    const parent = node.parentId ? exploration.nodes[node.parentId] : null;
+    const assessment = parent ? classifyExplorationMove(parent, node, analysisForNode(parent), analysisForNode(node), { inaccuracy: 50, mistake: 100, blunder: 200 }, 10) : null;
+    const hasPairedAnalysis = Boolean(parent && analysisForNode(parent) && analysisForNode(node));
+    const annotation = assessment?.classification ? `${classificationSymbol(assessment.classification)} ${assessment.classification}` : node.source === "exploration" ? hasPairedAnalysis ? "Unassessed" : "Analyzing…" : null;
     return <div key={id} className={indent && depth < 18 ? "ml-3 border-l border-white/10 pl-2" : ""}>
       <button ref={node.id === exploration.currentId ? exploredButton : null} aria-current={node.id === exploration.currentId ? "step" : undefined} className={`my-0.5 flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm ${node.id === exploration.currentId ? "bg-[#7655dc]/25 text-white" : "text-gray-300 hover:bg-white/5"}`} onClick={() => selectExplore(node.id)}>
         <span>{explorationMoveLabel(node)}</span>
-        <span className="ml-2 shrink-0 text-[9px] uppercase tracking-wide text-gray-500">{node.source === "game" ? "Game" : node.source === "exploration" ? "Explored" : "Root"}</span>
+        <span className="ml-2 flex shrink-0 items-center gap-2 text-[9px] uppercase tracking-wide text-gray-500">{annotation && <span className={assessment?.classification ? classificationTextColor(assessment.classification) : "text-gray-400"}>{annotation}</span>}{node.source === "game" ? "Game" : node.source === "exploration" ? "Explored" : "Root"}</span>
       </button>
       {node.children.map((childId) => renderExploreBranch(childId, depth + 1))}
     </div>;
@@ -434,18 +473,21 @@ export function GameViewer({ local }: { local?: {
           <label className="flex items-center gap-1.5 text-[11px] text-gray-500">View<select aria-label="Board orientation" className="rounded-lg border border-white/10 bg-[#0b0d13] px-2 py-2 text-xs text-gray-200" value={orientationMode} onChange={(event) => setOrientationMode(event.target.value as OrientationMode)}><option value="auto">Auto</option><option value="white">White</option><option value="black">Black</option></select></label>
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500"><span>{exploreMode && !browserLocal ? "← / → traverse line · ↑ / ↓ choose sibling branch" : "← / → move · ↑ / ↓ beginning / end"}</span><span>Eval: White&apos;s perspective · {orientation === "white" ? "White" : "Black"} at bottom</span></div>
+        {exploreMode && exploredNode?.san && <p role="status" aria-live="polite" className={`mt-2 rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 text-sm ${exploreClassification?.classification ? classificationTextColor(exploreClassification.classification) : "text-gray-300"}`}>{exploreClassification?.classification ? `${classificationSymbol(exploreClassification.classification)} ${exploreClassification.classification} · ${exploreClassification.lossCp} cp estimated loss` : !parentAnalysis || !exploreAnalysis ? "Analyzing move…" : "Unassessed · compatible centipawn evidence is unavailable for this move."}</p>}
       </section>
 
       <section className={`${browserLocal || mobilePanel === "analysis" ? "block" : "hidden"} min-w-0 xl:block`} aria-label="Analysis and move list">
-        {exploreMode && exploration ? <div className="flex min-h-0 max-h-[max(380px,calc(100dvh-160px))] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b]">
+        {exploreMode && exploration && <div className="flex min-h-0 max-h-[max(380px,calc(100dvh-160px))] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b]">
           <header className="border-b border-white/[0.07] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a994f0]">Explore position</p><h2 className="mt-1 text-lg font-medium">Stockfish analysis</h2><p className="mt-1 text-xs text-gray-400">{exploreStatus || "Analysis starts automatically for the selected position."} {exploreAnalysis ? `· ${exploreAnalysis.engine} depth ${exploreAnalysis.depth}` : ""}</p>{exploreError && <p role="alert" className="mt-2 text-xs text-red-300">{exploreError}</p>}</header>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3" aria-label="Variation moves">
             <section className="rounded-xl border border-white/[0.07] bg-black/15 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium">Position evaluation</h3><span className="font-mono text-sm text-[#d7cbff]">{exploreAnalysis?.terminal ?? (exploreAnalysis?.score ? exploreAnalysis.score.kind === "cp" ? `${(exploreAnalysis.score.value / 100).toFixed(2)} · White` : `Mate ${exploreAnalysis.score.value} · White` : "Pending")}</span></div><p className="mt-1 text-[11px] text-gray-500">Scores are from White&apos;s perspective. The evaluation bar beside the board updates with this position.</p>{exploreAnalysis?.bestMove && <p className="mt-3 text-sm text-gray-200">Best move: <strong className="text-white">{exploreAnalysis.variation[0] ?? exploreAnalysis.bestMove}</strong></p>}{exploreAnalysis?.variation.length ? <p className="mt-1 text-xs leading-relaxed text-gray-400">Continuation: {exploreAnalysis.variation.join(" ")}</p> : null}</section>
             {selectedParent && exploredNode?.san && <section className="rounded-xl border border-white/[0.07] p-3"><h3 className="text-sm font-medium">Explored move assessment</h3>{exploreClassification ? <><p className="mt-2 text-sm text-[#d7cbff]">{exploreClassification.classification} · {exploreClassification.lossCp} cp loss from {exploreClassification.color === "white" ? "White" : "Black"}&apos;s perspective{parentAnalysis && parentAnalysis.depth < 10 ? " · provisional" : ""}</p><p className="mt-1 text-xs text-gray-400">{explorationMoveLabel(exploredNode)}. Before: {exploreClassification.evaluationBefore?.toFixed(2) ?? "—"}; after: {exploreClassification.evaluationAfter?.toFixed(2) ?? "—"}. Top saved alternative: {exploreClassification.bestMove ?? "unavailable"}. {exploreClassification.reason} This is an estimate, not a judgment of intent.</p></> : !parentAnalysis || !exploreAnalysis ? <p className="mt-2 text-xs text-gray-400">{exploreError ? `Unassessed: ${exploreError}` : "Analyzing move and adjacent positions…"}</p> : <p className="mt-2 text-xs text-gray-400">Unassessed: compatible centipawn evaluations and a legal principal variation are required. Mate scores remain separate and are not converted to centipawns.</p>}</section>}
             <section className="rounded-xl border border-white/[0.07] p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium">Analysis controls</h3><label className="flex items-center gap-2 text-xs text-gray-400">Depth<select aria-label="Exploration analysis depth" className="rounded-lg border border-white/10 bg-[#0b0d13] px-2 py-1.5 text-xs text-gray-200" value={exploreDepth} onChange={(event) => { setExploreStatus("Analyzing current position…"); setExploreDepth(Number(event.target.value)); }}>{Array.from({ length: MAX_DEPTH - MIN_DEPTH + 1 }, (_, i) => MIN_DEPTH + i).map((depth) => <option key={depth} value={depth}>{depth}</option>)}</select></label></div><div className="mt-3 flex flex-wrap gap-2"><button className="btn" disabled={exploreDepth >= MAX_DEPTH} onClick={() => { setExploreStatus("Analyzing current position…"); setExploreDepth((depth) => Math.min(MAX_DEPTH, depth + 2)); }}>Analyze Deeper</button><button className="btn" disabled={savingVariation || explorePath.length < 2} onClick={() => void saveExploration()}>{savingVariation ? "Saving…" : "Save explored line as separate game"}</button>{browserLocal && <button className="btn" disabled={!variationId || !variationEdges(exploration).length} onClick={() => void saveTree()}>Save variation tree</button>}</div><p className="mt-2 text-[10px] text-gray-500">Positions are analyzed automatically. Results use the local browser cache and current engine/depth settings. Save a line as a separate PGN or save the complete variation tree to continue exploring later.</p></section>
             <section className="rounded-xl border border-white/[0.07] p-3"><h3 className="mb-2 text-sm font-medium">Variation tree</h3>{exploration.nodes[exploration.rootId].children.length ? renderExploreBranch(exploration.rootId) : <p className="text-xs text-gray-500">No moves explored yet.</p>}</section>
+            {analysisGameId && <button className="btn self-start" onClick={() => setShowOriginalReview((visible) => !visible)}>{showOriginalReview ? "Hide original game review" : "Show original game review"}</button>}
           </div>
-        </div> : analysisGameId ? <FullGameAnalysis key={`${analysisGameId}:${local?.restoreVersion ?? 0}`} browserLocal={browserLocal} gameId={analysisGameId} positions={gamePositions} selectedPly={idx} onSelect={position} onPositionAnalysis={updatePositionAnalysis} onReviewModeChange={updateReviewMode} openingName={meta.Opening} playerColor={playerColor} /> : <div className="flex min-h-0 max-h-[max(380px,calc(100dvh-160px))] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b]">
+        </div>}
+        {analysisGameId ? <div className={exploreMode && !showOriginalReview ? "hidden" : "block"}><FullGameAnalysis key={`${analysisGameId}:${local?.restoreVersion ?? 0}`} browserLocal={browserLocal} gameId={analysisGameId} positions={gamePositions} selectedPly={idx} onSelect={position} onPositionAnalysis={updatePositionAnalysis} onReviewModeChange={updateReviewMode} openingName={meta.Opening} playerColor={playerColor} /></div> : !exploreMode && <div className="flex min-h-0 max-h-[max(380px,calc(100dvh-160px))] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#11131b]">
           <header className="border-b border-white/[0.07] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a994f0]">Position analysis</p><h2 className="mt-1 text-lg font-medium">Explore this game</h2><p className="mt-1 text-xs text-gray-400">{positionAnalysis ? `White perspective · ${positionAnalysis.analysis.engine} depth ${positionAnalysis.analysis.depth}` : "Load and save a game to see persistent evaluations and review tools."}</p></header>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <div className="grid grid-cols-[auto_1fr_1fr] gap-1" aria-label="Game moves">{moves.map((ply, index) => <button key={`${ply.from}-${ply.to}-${index}`} className={`col-span-3 grid grid-cols-[2.5rem_minmax(0,1fr)] rounded-lg px-2.5 py-2 text-left text-sm ${idx === index + 1 ? "bg-[#7655dc]/20 text-white" : "text-gray-300 hover:bg-white/5"}`} onClick={() => position(index + 1)}><span className="text-[10px] text-gray-500">{Math.ceil((index + 1) / 2)}{index % 2 ? "…" : "."}</span><span>{ply.san}</span></button>)}</div>
@@ -475,4 +517,16 @@ export function GameViewer({ local }: { local?: {
       <button className="btn" onClick={() => setPromotionChoice(null)}>Cancel</button></div>
     </dialog>}
   </div>;
+}
+
+function classificationSymbol(classification: string) {
+  return ({ Best: "★", Excellent: "✓", Good: "·", Inaccuracy: "?!", Mistake: "?", Blunder: "??" } as Record<string, string>)[classification] ?? "·";
+}
+
+function classificationTextColor(classification: string) {
+  return ({ Best: "text-green-300", Excellent: "text-lime-300", Good: "text-emerald-300", Inaccuracy: "text-yellow-300", Mistake: "text-orange-300", Blunder: "text-red-300" } as Record<string, string>)[classification] ?? "text-gray-300";
+}
+
+function classificationSquareColor(classification: string) {
+  return ({ Best: "#86efac", Excellent: "#bef264", Good: "#6ee7b7", Inaccuracy: "#fde047", Mistake: "#fb923c", Blunder: "#f87171" } as Record<string, string>)[classification] ?? null;
 }

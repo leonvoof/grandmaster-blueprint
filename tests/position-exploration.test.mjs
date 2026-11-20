@@ -3,7 +3,7 @@ import { registerHooks } from "node:module";
 import { test } from "node:test";
 registerHooks({ resolve(specifier, context, nextResolve) { if (specifier.startsWith("@/")) return nextResolve(new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href, context); if (specifier === "./engine" && context.parentURL?.endsWith("/lib/stockfish/cache.ts")) return nextResolve(new URL("../lib/stockfish/engine.ts", import.meta.url).href, context); return nextResolve(specifier, context); } });
 const { Chess } = await import("chess.js");
-const { addExplorationMove, classifyExplorationMove, createExplorationTree, explorationAnalysisIdentity, explorationAnalysisQueue, explorationArrowTarget, explorationPath, rememberExplorationPositions, selectExplorationNode, undoExplorationMove } = await import("../lib/position-exploration.ts");
+const { addExplorationMove, classifyExplorationMove, createExplorationTree, explorationAnalysisIdentity, explorationAnalysisQueue, explorationArrowTarget, explorationPath, normalizeExplorationAnalysis, rememberExplorationPositions, selectExplorationNode, undoExplorationMove } = await import("../lib/position-exploration.ts");
 const { analysisKey } = await import("../lib/stockfish/cache.ts");
 const thresholds = { inaccuracy: 50, mistake: 100, blunder: 200 };
 const makeAnalysis = (value, variation, depth = 12, kind = "cp") => ({ engine: "Stockfish 19.0.1 Lite", depth, score: { kind, value }, bestMove: variation[0] ?? null, variation });
@@ -58,6 +58,44 @@ test("branch changes prioritize that branch and keep transposed node assessments
   assert.deepEqual(explorationAnalysisQueue(tree, secondOrder, [firstOrder, secondOrder]), [secondOrder, firstOrder]);
 });
 
+test("rapidly played move targets remain queued after switching branches", () => {
+  let tree = createExplorationTree(new Chess().fen(), 0);
+  const targets = [];
+  const remember = (from, to) => {
+    const parent = tree.currentId;
+    tree = addExplorationMove(tree, from, to).tree;
+    targets.splice(0, targets.length, ...rememberExplorationPositions(targets, parent, tree.currentId));
+    return tree.currentId;
+  };
+  const e4 = remember("e2", "e4");
+  const e5 = remember("e7", "e5");
+  tree = selectExplorationNode(tree, tree.rootId);
+  const d4 = remember("d2", "d4");
+  const queue = explorationAnalysisQueue(tree, d4, targets);
+  assert.equal(queue[0], d4, "selected variation is analyzed first");
+  assert.ok([e4, e5, d4].every((id) => queue.includes(id)), "moves from the abandoned line remain scheduled");
+  assert.equal(new Set(queue).size, queue.length, "revisited positions are analyzed once");
+});
+
+test("switching away from a move and back retains its node-keyed assessment", () => {
+  let tree = createExplorationTree(new Chess().fen(), 0);
+  const e4 = addExplorationMove(tree, "e2", "e4");
+  tree = e4.tree;
+  const d4 = addExplorationMove(selectExplorationNode(tree, tree.rootId), "d2", "d4");
+  tree = d4.tree;
+  const results = new Map();
+  const cache = (node, analysis) => results.set(explorationAnalysisIdentity(tree.nodes[tree.rootId].fen, node, 12, "Stockfish", "single", "game"), analysis);
+  cache(tree.nodes[e4.tree.currentId], makeAnalysis(0, ["e4"]));
+  cache(tree.nodes[d4.tree.currentId], makeAnalysis(20, ["d4"]));
+  const read = (node) => results.get(explorationAnalysisIdentity(tree.nodes[tree.rootId].fen, node, 12, "Stockfish", "single", "game"));
+  tree = selectExplorationNode(tree, e4.tree.currentId);
+  assert.equal(read(tree.nodes[tree.currentId]).score.value, 0);
+  tree = selectExplorationNode(tree, d4.tree.currentId);
+  assert.equal(read(tree.nodes[tree.currentId]).score.value, 20);
+  tree = selectExplorationNode(tree, e4.tree.currentId);
+  assert.equal(read(tree.nodes[tree.currentId]).score.value, 0);
+});
+
 test("compatible FEN analysis cache keys are reused only at matching engine settings and depth", () => {
   const fen = new Chess().fen();
   assert.equal(analysisKey("game", fen, 12), analysisKey("game", fen, 12));
@@ -85,6 +123,19 @@ test("move assessments use mover perspective and identify the pre-move PV recomm
   const blackAfter = { ...afterWhite, id: "b", parentId: "w", ply: 2, fen: blackChess.fen(), san: c5.san, from: c5.from, to: c5.to };
   const black = classifyExplorationMove(blackBefore, blackAfter, makeAnalysis(100, ["e5"]), makeAnalysis(250, []), thresholds);
   assert.equal(black.color, "black"); assert.equal(black.lossCp, 150); assert.equal(black.classification, "Mistake");
+});
+
+test("live UCI engine names normalize to the pinned identity used by saved evaluations", () => {
+  const chess = new Chess(); chess.move("e4"); chess.move("e5");
+  const before = { id: "2", parentId: "1", ply: 2, fen: chess.fen(), san: "e5", from: "e7", to: "e5", promotion: null, source: "game", children: [] };
+  const move = chess.move("Nf3");
+  const after = { id: "x", parentId: "2", ply: 3, fen: chess.fen(), san: move.san, from: move.from, to: move.to, promotion: null, source: "exploration", children: [] };
+  const pinned = makeAnalysis(28, ["Nf3", "Nc6"]);
+  const live = normalizeExplorationAnalysis({ ...makeAnalysis(27, ["Nf6", "Nc3"]), engine: "Stockfish 19 Lite WASM" }, pinned.engine);
+  const assessment = classifyExplorationMove(before, after, pinned, live, thresholds, 10);
+  assert.equal(live.engine, pinned.engine);
+  assert.equal(assessment.classification, "Best");
+  assert.equal(assessment.lossCp, 1);
 });
 
 test("assessments with missing, incompatible, shallow, illegal-PV, or mate evidence are withheld", () => {

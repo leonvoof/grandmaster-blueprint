@@ -18,6 +18,10 @@ export function explorationAnalysisIdentity(rootFen: string, node: ExplorationNo
   return JSON.stringify([gameId, rootFen, node.id, node.fen, engine, settings, depth]);
 }
 
+export function normalizeExplorationAnalysis(analysis: Analysis, engineBuild: string): Analysis {
+  return { ...analysis, engine: engineBuild };
+}
+
 export function createExplorationTree(rootFen: string, rootPly: number, originalLine: ExplorationMove[] = []): ExplorationTree {
   const root: ExplorationNode = { id: "0", parentId: null, ply: rootPly, fen: new Chess(rootFen).fen(), san: null, from: null, to: null, promotion: null, source: "root", children: [] };
   const nodes: Record<string, ExplorationNode> = { "0": root };
