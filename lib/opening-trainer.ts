@@ -40,7 +40,7 @@ export type Exercise = {
   stats: Readonly<Stats>;
 };
 
-const moveKey = (move: SavedMove) => move.from + move.to + (move.promotion ?? "");
+export const trainingMoveKey = (move: SavedMove) => move.from + move.to + (move.promotion ?? "");
 const pick = <T,>(items: readonly T[], random: () => number) => items[Math.floor(random() * items.length)];
 
 export function buildTrainingTree(lines: readonly TrainingLine[]) {
@@ -64,7 +64,7 @@ export function buildTrainingTree(lines: readonly TrainingLine[]) {
     roots.set(root.fen, root);
     let position = root;
     for (const move of moves) {
-      const key = moveKey(move);
+      const key = trainingMoveKey(move);
       let edge = position.continuations.get(key);
       if (!edge) {
         edge = {
@@ -88,7 +88,7 @@ function settle(state: Exercise): Exercise {
 }
 
 function follow(state: Exercise, move: Move): Exercise {
-  const edge = state.position.continuations.get(moveKey(move));
+  const edge = state.position.continuations.get(trainingMoveKey(move));
   if (!edge || edge.position.fen !== move.after) throw new Error("Saved continuation does not match the current position.");
   return settle({
     ...state, position: edge.position, moves: [...state.moves, move.san],
@@ -104,13 +104,17 @@ export function playOpponent(state: Exercise, random: () => number): Exercise {
   return follow({ ...state, feedback: [state.feedback, `Opponent played ${played.san}.`].filter(Boolean).join(" ") }, played);
 }
 
-export function startExercise(root: TrainingPosition, color: Color, random: () => number, stats = emptyStats): Exercise {
+export function beginExercise(root: TrainingPosition, color: Color, stats = emptyStats): Exercise {
   const initial: Exercise = {
     root, position: root, color, moves: [], status: "starting", stats,
     attemptedHere: false, incorrectHere: 0, hintsHere: 0, revealsHere: 0, lastSubmitted: null,
     hint: "", revealed: "", feedback: "",
   };
-  return playOpponent(settle(initial), random);
+  return settle(initial);
+}
+
+export function startExercise(root: TrainingPosition, color: Color, random: () => number, stats = emptyStats): Exercise {
+  return playOpponent(beginExercise(root, color, stats), random);
 }
 
 export function startExerciseAt(root: TrainingPosition, position: TrainingPosition, color: Color, random: () => number, contextPath: readonly string[], stats = emptyStats): Exercise {
@@ -137,7 +141,7 @@ export function trainingPositionAt(root: TrainingPosition, contextPath: readonly
   return position.fen === fen ? position : null;
 }
 
-export function playAnswer(state: Exercise, input: { from: string; to: string; promotion?: string }, random: () => number) {
+export function submitTrainingMove(state: Exercise, input: { from: string; to: string; promotion?: string }) {
   if (state.status !== "player") return { state, accepted: false };
   let move: Move;
   try {
@@ -146,15 +150,20 @@ export function playAnswer(state: Exercise, input: { from: string; to: string; p
     return { state: { ...state, feedback: "That move is illegal in this position." }, accepted: false };
   }
   const stats = { ...state.stats, attempted: state.stats.attempted + Number(!state.attemptedHere) };
-  if (!state.position.continuations.has(moveKey(move))) {
+  if (!state.position.continuations.has(trainingMoveKey(move))) {
     return {
-      state: { ...state, stats: { ...stats, incorrect: stats.incorrect + 1 }, attemptedHere: true, incorrectHere: state.incorrectHere + 1, lastSubmitted: moveKey(move), feedback: `${move.san} is legal but outside the saved repertoire.` },
+      state: { ...state, stats: { ...stats, incorrect: stats.incorrect + 1 }, attemptedHere: true, incorrectHere: state.incorrectHere + 1, lastSubmitted: trainingMoveKey(move), feedback: `${move.san} is legal but outside the saved repertoire.` },
       accepted: false,
     };
   }
   if (!state.attemptedHere && !state.hint && !state.revealed) stats.firstCorrect++;
-  const next = follow({ ...state, stats, lastSubmitted: moveKey(move), feedback: "Correct repertoire move." }, move);
-  return { state: playOpponent(next, random), accepted: true };
+  const next = follow({ ...state, stats, lastSubmitted: trainingMoveKey(move), feedback: "Correct repertoire move." }, move);
+  return { state: next, accepted: true };
+}
+
+export function playAnswer(state: Exercise, input: { from: string; to: string; promotion?: string }, random: () => number) {
+  const result = submitTrainingMove(state, input);
+  return result.accepted ? { ...result, state: playOpponent(result.state, random) } : result;
 }
 
 export function requestHint(state: Exercise): Exercise {
