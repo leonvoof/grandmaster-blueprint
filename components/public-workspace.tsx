@@ -8,7 +8,7 @@ import { exportBrowserReviews, restoreBrowserReviews } from "@/lib/browser-game-
 import { buildTrainingTree, playAnswer, startExercise, type Exercise } from "@/lib/opening-trainer";
 import { lichessCooldownKey, lichessImportLimits, LichessImportError, mergeLichessGames, requestPublicLichessGames, withSingleLichessImport, type LichessTimeControl } from "@/lib/public-lichess";
 import { decodeProgress, maxBackupBytes, puzzles, readProgress, saveProgress, validatedPgn, type PublicProgress, type PublicGame } from "@/lib/public-progress";
-import { parseNextPuzzle, parsePuzzleRow, type PuzzleInput } from "@/lib/tactics";
+import { buildPuzzleNextUrl, parseNextPuzzle, parsePuzzleRow, puzzleDifficultyOptions, puzzleThemeOptions, type PuzzleDifficulty, type PuzzleInput, type PuzzleTheme } from "@/lib/tactics";
 
 
 const panel = "rounded-2xl border border-white/10 bg-[#11131b] p-4 sm:p-6";
@@ -287,39 +287,63 @@ function PgnWorkspace({ training, lichessImport, progress, update, restoreVersio
 function Tactics({ progress, update }: { progress: PublicProgress | null; update: Update }) {
   const [selected, setSelected] = useState(0);
   const [active, setActive] = useState<PuzzleInput>(puzzles[0]);
+  const [difficulty, setDifficulty] = useState<PuzzleDifficulty>("normal");
+  const [theme, setTheme] = useState<PuzzleTheme>("mix");
   const [request, setRequest] = useState(0);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
   const recentIds = useRef<string[]>([]);
+  const requestEpoch = useRef(0);
   useEffect(() => {
     const controller = new AbortController();
+    const epoch = ++requestEpoch.current;
     setLoading(true); setFetchError("");
     void (async () => {
       try {
         let next: PuzzleInput | null = null;
         for (let tries = 0; tries < 3 && !next; tries++) {
-          const response = await fetch("https://lichess.org/api/puzzle/next", { credentials: "omit", headers: { Accept: "application/json" }, signal: controller.signal });
+          const response = await fetch(buildPuzzleNextUrl(difficulty, theme), { credentials: "omit", headers: { Accept: "application/json" }, signal: controller.signal });
           if (!response.ok) throw new Error(response.status === 429 ? "Lichess is temporarily rate limiting puzzle requests." : `Puzzle request failed (${response.status}).`);
           const candidate = parseNextPuzzle(await response.json());
           if (!recentIds.current.includes(candidate.id) || tries === 2) next = candidate;
         }
-        if (!controller.signal.aborted && next) { setActive(next); recentIds.current = [...recentIds.current.filter((id) => id !== next!.id), next!.id].slice(-8); setSelected(-1); }
+        if (!controller.signal.aborted && epoch === requestEpoch.current && next) { setActive(next); recentIds.current = [...recentIds.current.filter((id) => id !== next!.id), next!.id].slice(-8); setSelected(-1); }
       } catch (error) {
-        if (!controller.signal.aborted) setFetchError(error instanceof Error ? error.message : "Could not load a Lichess puzzle.");
-      } finally { if (!controller.signal.aborted) setLoading(false); }
+        if (!controller.signal.aborted && epoch === requestEpoch.current) setFetchError(error instanceof Error ? error.message : "Could not load a Lichess puzzle.");
+      } finally { if (!controller.signal.aborted && epoch === requestEpoch.current) setLoading(false); }
     })();
     return () => controller.abort();
-  }, [request]);
+  }, [request, difficulty, theme]);
   const fallback = selected >= 0 ? puzzles[selected] : null;
   const puzzle = fallback ?? active;
+  function requestNext() { requestEpoch.current += 1; setRequest((n) => n + 1); }
+  function chooseFallback(index: number) {
+    requestEpoch.current += 1;
+    setSelected(index);
+    setLoading(false);
+    setFetchError("");
+  }
   return <div className={`${panel} knightforge-public-tactics`}>
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#70d6b8]">Tactics practice</p><h2 className="mt-1 text-xl font-semibold">Find the best move</h2></div><button className="knightforge-import-action btn min-h-11 px-4" onClick={() => { setSelected(-1); setRequest((n) => n + 1); }}>Next Puzzle <span aria-hidden="true">→</span></button></div>
-    <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-400"><span>#{puzzle.id} · {puzzle.rating}</span>{loading && <span role="status" className="text-[#8bdac1]">Loading next puzzle…</span>}<a className="underline decoration-white/20 underline-offset-4 hover:text-[#8bdac1]" href="https://database.lichess.org/#puzzles">Lichess Puzzle Database · CC0</a></div>
-    {fetchError && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/15 bg-amber-200/[.04] p-3 text-sm text-amber-100/80" role="status"><span>{fetchError} The offline puzzle set remains available.</span><button className="btn" onClick={() => setRequest((n) => n + 1)}>Retry</button></div>}
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.16em] text-[#70d6b8]">Tactics practice</p><h2 className="mt-1 text-xl font-semibold">Find the best move</h2></div><button className="knightforge-import-action btn min-h-11 px-4" onClick={requestNext}>Next Puzzle <span aria-hidden="true">→</span></button></div>
+    <div className="mt-4 grid gap-3 rounded-xl border border-white/[.07] bg-black/20 p-3 sm:grid-cols-2 sm:p-4">
+      <label className="grid gap-1.5 text-xs font-medium text-gray-400">Difficulty
+        <select className="field min-h-10 w-full" value={difficulty} onChange={(event) => { requestEpoch.current += 1; setDifficulty(event.target.value as PuzzleDifficulty); }}>
+          {puzzleDifficultyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </label>
+      <label className="grid gap-1.5 text-xs font-medium text-gray-400">Tactical theme
+        <select className="field min-h-10 w-full" value={theme} onChange={(event) => { requestEpoch.current += 1; setTheme(event.target.value as PuzzleTheme); }}>
+          {puzzleThemeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </label>
+      <p className="text-[11px] leading-5 text-gray-500 sm:col-span-2">Difficulty is relative to Lichess’s anonymous-user reference rating, not an exact puzzle rating range.</p>
+    </div>
+    <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-400"><span>#{puzzle.id} · {puzzle.rating}</span><span className="rounded-full border border-white/10 px-2 py-1">{fallback ? "Offline fallback · filters not applied" : `Lichess · ${puzzle.themes || "theme not provided"}`}</span>{loading && <span role="status" className="text-[#8bdac1]">Loading matching puzzle…</span>}<a className="underline decoration-white/20 underline-offset-4 hover:text-[#8bdac1]" href="https://database.lichess.org/#puzzles">Lichess Puzzle Database · CC0</a></div>
+    {fetchError && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/15 bg-amber-200/[.04] p-3 text-sm text-amber-100/80" role="status"><span>{fetchError} The current puzzle is still available; offline fallback puzzles do not apply the selected filters.</span><button className="btn" onClick={requestNext}>Retry</button></div>}
     <Puzzle key={`${puzzle.id}:${selected}`} row={puzzle} solved={() => update((data) => ({ ...data, solves: { ...data.solves, [puzzle.id]: (data.solves[puzzle.id] ?? 0) + 1 } }))}>
       <p className="my-3 text-sm text-gray-400">Completed in this browser: {progress?.solves[puzzle.id] ?? 0}.</p>
     </Puzzle>
-    {selected >= 0 && <label className="mt-4 block text-sm">Offline puzzle fallback <select className="field ml-2" value={selected} onChange={(event) => setSelected(Number(event.target.value))}>{puzzles.map(({ id, rating }, index) => <option key={id} value={index}>#{id} · {rating}</option>)}</select></label>}
+    <label className="mt-4 block text-xs text-gray-500">Offline fallback set <select className="field ml-2 min-h-9" value={selected >= 0 ? selected : ""} onChange={(event) => { if (event.target.value !== "") chooseFallback(Number(event.target.value)); }}><option value="">Use Lichess puzzle</option>{puzzles.map(({ id, rating }, index) => <option key={id} value={index}>#{id} · {rating}</option>)}</select></label>
   </div>;
 }
 

@@ -1,6 +1,31 @@
 import { Chess } from "chess.js";
 export const PUZZLE_SOURCE = "Lichess Puzzle Database";
 export const PUZZLE_LICENSE = "CC0 1.0 Universal (Public Domain)";
+export const puzzleDifficultyOptions = [
+  { label: "Very Easy", value: "easiest" },
+  { label: "Easy", value: "easier" },
+  { label: "Normal", value: "normal" },
+  { label: "Hard", value: "harder" },
+  { label: "Very Hard", value: "hardest" },
+] as const;
+export const puzzleThemeOptions = [
+  { label: "Mixed", value: "mix" },
+  { label: "Forks", value: "fork" },
+  { label: "Pins", value: "pin" },
+  { label: "Checkmates", value: "mate" },
+  { label: "Mate in 1", value: "mateIn1" },
+  { label: "Sacrifices", value: "sacrifice" },
+  { label: "Endgames", value: "endgame" },
+  { label: "Skewers", value: "skewer" },
+  { label: "Discovered Attacks", value: "discoveredAttack" },
+  { label: "Hanging Pieces", value: "hangingPiece" },
+] as const;
+export type PuzzleDifficulty = typeof puzzleDifficultyOptions[number]["value"];
+export type PuzzleTheme = typeof puzzleThemeOptions[number]["value"];
+export function buildPuzzleNextUrl(difficulty: PuzzleDifficulty, angle: PuzzleTheme) {
+  const query = new URLSearchParams({ difficulty, angle });
+  return `https://lichess.org/api/puzzle/next?${query.toString()}`;
+}
 export type PuzzleInput = { id: string; fen: string; moves: string; rating: number; themes: string; setupApplied?: boolean };
 export function parseNextPuzzle(value: unknown): PuzzleInput {
   if (!value || typeof value !== "object") throw new Error("Lichess returned an invalid puzzle.");
