@@ -17,7 +17,7 @@ const field = "w-full min-w-0 rounded-lg border border-white/15 bg-[#0a0e0d] px-
 
 export function PublicOpeningEditor({ repertoires, update }: { repertoires?: PublicRepertoire[]; update: Update }) {
   const [selectedId, setSelectedId] = useState<string>();
-  const [showLibrary, setShowLibrary] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(true);
   const [library, setLibrary] = useState<OpeningLibrary>();
   const [loadFailed, setLoadFailed] = useState(false);
   const [importError, setImportError] = useState("");
@@ -82,16 +82,16 @@ export function PublicOpeningEditor({ repertoires, update }: { repertoires?: Pub
     {practice && <PublicOpeningPractice key={practice.id} repertoire={practice} onExit={() => setPracticeId(undefined)} />}
     {!practice && <div className="mb-3 flex flex-wrap gap-2" aria-label="Opening Academy views">
       <button className={`${control} aria-pressed:bg-[#70d6b8]/10 aria-pressed:text-[#a8eed8]`} aria-pressed={!showLibrary} onClick={() => setShowLibrary(false)}>My Repertoire</button>
-      <button className={`${control} aria-pressed:bg-[#70d6b8]/10 aria-pressed:text-[#a8eed8]`} aria-pressed={showLibrary} onClick={() => setShowLibrary(true)}>Built-in Openings</button>
+      <button className={`${control} aria-pressed:bg-[#70d6b8]/10 aria-pressed:text-[#a8eed8]`} aria-pressed={showLibrary} onClick={() => setShowLibrary(true)}>Explore Openings</button>
     </div>}
-    {showLibrary && !practice && <section className={card}>
-      <h2 className="font-semibold">Built-in Openings</h2>
-      <p className="mb-4 mt-1 text-sm text-[#a4b5ab]">Recorded opening lines from the Lichess Chess Openings dataset (CC0).</p>
-      {library ? <PublicOpeningLibrary library={library} repertoires={repertoires} onImport={importOpening} /> :
+    <section className={showLibrary && !practice ? "min-w-0 sm:rounded-2xl sm:border sm:border-white/10 sm:bg-[#111815] sm:p-5" : "hidden"}>
+      <h2 className="font-semibold">Explore Openings</h2>
+      <p className="mb-4 mt-1 text-sm text-[#a4b5ab]">Recorded lines from the Lichess Chess Openings catalog (CC0). The catalog covers named lines and may omit other theoretical moves.</p>
+      {library ? <PublicOpeningLibrary active={showLibrary && !practice} library={library} repertoires={repertoires} onImport={importOpening} /> :
         loadFailed ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm"><p>Could not load the opening library.</p><button className={control} onClick={() => setLoadFailed(false)}>Retry</button></div> :
           <p role="status" className="text-sm text-[#a4b5ab]">Loading opening library…</p>}
       {importError && <p role="alert" className="mt-3 text-sm text-[#f5b0a5]">{importError}</p>}
-    </section>}
+    </section>
     <div className={practice || showLibrary ? "hidden" : "grid items-start gap-4 xl:grid-cols-[245px_minmax(0,1fr)]"}>
     <aside className={card}>
       <h2 className="mb-3 flex items-center gap-2 font-semibold"><BookOpen size={17} className="text-[#70d6b8]" /> Repertoires</h2>

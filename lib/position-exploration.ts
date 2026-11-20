@@ -1,5 +1,5 @@
 import { Chess } from "chess.js";
-import { classifyEvaluationMove, MIN_CLASSIFICATION_DEPTH, type ClassificationThresholds, type ClassifiedMove } from "@/lib/game-review-classification";
+import { classifyEvaluationMove, MIN_CLASSIFICATION_DEPTH, type ClassificationThresholds, type ClassifiedMove } from "./game-review-classification.ts";
 import type { Analysis } from "@/lib/stockfish/position";
 
 export type ExplorationMove = { san: string; fen: string; from: string; to: string; promotion?: string | null };
