@@ -16,7 +16,14 @@ const privateMiddleware = auth((request) => {
 export default function middleware(request: NextRequest, event: Parameters<typeof privateMiddleware>[1]) {
   const mode = siteMode();
   const path = request.nextUrl.pathname;
-  if (mode === "public" && publicRequestAllowed(path, request.method)) return NextResponse.next();
+  if (mode === "public" && publicRequestAllowed(path, request.method)) {
+    const response = NextResponse.next();
+    if (path === "/openings") {
+      // The OAuth provider returns its one-time authorization code in the query.
+      response.headers.set("Referrer-Policy", "no-referrer");
+    }
+    return response;
+  }
   if (mode !== "private") {
     return new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
   }

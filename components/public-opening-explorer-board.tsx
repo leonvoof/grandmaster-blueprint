@@ -137,7 +137,6 @@ export function OpeningExplorerBoard({ tree, preferred, played, title, recognize
 
       <section className={explorerPanel}>
         <h3 className="text-sm font-semibold">Continuations</h3>
-        <p className="mt-1 text-xs text-[#a4b5ab]">Master-game statistics unavailable</p>
         <div className="mt-2 flex flex-wrap gap-1">
           {current.children.map((id) => {
             const node = tree.nodes[id];
