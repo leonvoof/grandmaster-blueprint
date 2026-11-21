@@ -13,9 +13,11 @@ type VariationRecord = { id: string; edges: SavedBranch[] };
 type RecordValue = SavedAnalysis | SavedReview | VariationRecord;
 type Store = "analyses" | "reviews" | "variations";
 
+const databaseName = "knightforge-game-review";
+
 function openDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open("knightforge-game-review", 2);
+    const request = indexedDB.open(databaseName, 2);
     request.onupgradeneeded = (event) => {
       if (event.oldVersion < 2) request.result.createObjectStore("variations");
       for (const store of event.oldVersion < 1 ? ["analyses", "reviews"] : []) {
@@ -52,6 +54,36 @@ export async function browserGameId(pgn: string) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pgn.trim()));
   return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+// Coach reads the existing analysis store without creating it or upgrading its schema.
+export async function readCoachAnalyses(gameIds: readonly string[]): Promise<SavedAnalysis[]> {
+  if (!gameIds.length) return [];
+  const db = await new Promise<IDBDatabase | null>((resolve, reject) => {
+    const request = indexedDB.open(databaseName);
+    let absent = false;
+    request.onupgradeneeded = () => {
+      absent = true;
+      request.transaction!.abort();
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => absent ? resolve(null) : reject(new Error("Could not read saved game analysis."));
+  });
+  if (!db) return [];
+  try {
+    if (!db.objectStoreNames.contains("analyses")) return [];
+    return await new Promise<SavedAnalysis[]>((resolve, reject) => {
+      const tx = db.transaction("analyses", "readonly");
+      const index = tx.objectStore("analyses").index("game");
+      const rows: SavedAnalysis[] = [];
+      tx.oncomplete = () => resolve(rows);
+      tx.onabort = () => reject(new Error("Could not read saved game analysis."));
+      for (const id of new Set(gameIds)) {
+        const request = index.getAll(id);
+        request.onsuccess = () => { for (const row of request.result) rows.push(row as SavedAnalysis); };
+      }
+    });
+  } finally { db.close(); }
+}
+
 export const readBrowserAnalyses = (gameId: string) => list<SavedAnalysis>("analyses", gameId);
 export const readBrowserReviews = (gameId: string) => list<SavedReview>("reviews", gameId);
 

@@ -5,6 +5,7 @@ import { GameViewer } from "@/components/game-viewer";
 import { WeaknessReport } from "@/components/weakness-report";
 import { OpeningAcademy } from "@/components/opening-academy";
 
+import { PublicCoach } from "@/components/public-coach";
 import { PublicWorkspace } from "@/components/public-workspace";
 import { siteMode } from "@/lib/site-mode";
 
@@ -15,6 +16,7 @@ export default async function SectionPage({ params }: { params: Promise<{ sectio
   const mode = siteMode();
   if (mode === "blocked") notFound();
   if (mode === "public") {
+    if (section === "coach") return <PublicCoach />;
     if (section === "games" || section === "analysis" || section === "tactics" || section === "openings") {
       return <PublicWorkspace section={section} />;
     }
