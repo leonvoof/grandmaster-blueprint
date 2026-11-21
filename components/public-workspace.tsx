@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Chess } from "chess.js";
 import { PublicBoard as Board, type BoardMove as Move } from "@/components/public-board";
+import { PublicPuzzleAnalysis } from "@/components/public-puzzle-analysis";
 import { PublicOpeningEditor } from "@/components/public-opening-editor";
 import { GameViewer } from "@/components/game-viewer";
 import { exportBrowserReviews, restoreBrowserReviews } from "@/lib/browser-game-review";
 import { buildTrainingTree, playAnswer, startExercise, type Exercise } from "@/lib/opening-trainer";
 import { lichessCooldownKey, lichessImportLimits, LichessImportError, mergeLichessGames, requestPublicLichessGames, withSingleLichessImport, type LichessTimeControl } from "@/lib/public-lichess";
 import { decodeProgress, maxBackupBytes, puzzles, readProgress, recordTacticsAttempt, saveProgress, tacticsFirstTryRate, validatedPgn, type PublicProgress, type PublicGame, type TacticsAttempt } from "@/lib/public-progress";
+import { canAnalyzePuzzle, createPuzzleAnalysis } from "@/lib/puzzle-analysis";
 import { buildPuzzleNextUrl, parseNextPuzzle, parsePuzzleRow, puzzleDifficultyOptions, puzzleThemeOptions, type PuzzleDifficulty, type PuzzleInput, type PuzzleTheme, visiblePuzzleThemeLabels } from "@/lib/tactics";
 
 
@@ -408,6 +410,9 @@ function Puzzle({ row, solved, skipped, moveAttempted, incorrect, children }: { 
   const [feedback, setFeedback] = useState("");
   const [hint, setHint] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [study, setStudy] = useState<ReturnType<typeof createPuzzleAnalysis>>(null);
+  const finished = canAnalyzePuzzle(index, line.length, revealed);
+  const black = new Chess(puzzle.fen).turn() === "b";
   function move(input: Move) {
     if (index >= line.length || revealed) return false;
     const board = new Chess(fen);
@@ -427,10 +432,13 @@ function Puzzle({ row, solved, skipped, moveAttempted, incorrect, children }: { 
     if (next === line.length) solved();
     return true;
   }
-  return <>{children}<Board fen={fen} black={new Chess(puzzle.fen).turn() === "b"} move={move} green />
+  if (study) return <PublicPuzzleAnalysis baseline={study} black={black} onReturn={() => setStudy(null)} />;
+  return <>{children}<Board fen={fen} black={black} move={move} green />
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      <button className="btn" onClick={() => { setHint(true); setFeedback("Hint: look for a forcing move by the highlighted piece."); }}>Hint</button>
-      <button className="btn" onClick={() => { setRevealed(true); setFeedback(`Solution: ${line.join(" ")}`); skipped(); }}>Show solution</button>
+      <button className="btn" disabled={finished} onClick={() => { setHint(true); setFeedback("Hint: look for a forcing move by the highlighted piece."); }}>Hint</button>
+      <button className="btn" disabled={finished} onClick={() => { setRevealed(true); setFeedback(`Solution: ${line.join(" ")}`); skipped(); }}>Show solution</button>
+      {finished && <button type="button" className="btn border-[#70d6b8]/30 text-[#a8eed8]"
+        onClick={() => setStudy(createPuzzleAnalysis(puzzle.fen, line, index, revealed))}>Analyze Position</button>}
       <p role="status" className="text-sm text-[#8bdac1]">{feedback}</p>
       {hint && !feedback && <span className="text-xs text-gray-400">Find a forcing move.</span>}
     </div>
