@@ -7,6 +7,8 @@ import { PublicBoard, type BoardMove } from "@/components/public-board";
 import { PublicOpeningLibrary, type LibraryImport } from "@/components/public-opening-library";
 import { loadOpeningLibrary, type OpeningLibrary } from "@/lib/built-in-openings";
 import { PublicOpeningPractice } from "@/components/public-opening-practice";
+import { PublicOpeningReviewSession } from "@/components/public-opening-review-session";
+import { dueOpeningReviews, openingMastery, recordOpeningReview, type OpeningReview, type OpeningReviewOutcome } from "@/lib/public-opening-reviews";
 import type { PublicProgress } from "@/lib/public-progress";
 import { addRepertoireMove, maxRepertoires, mergeRepertoireLines, repertoirePositions, repertoireRoot, type PublicRepertoire } from "@/lib/public-repertoire";
 
@@ -15,13 +17,20 @@ const card = "min-w-0 rounded-2xl border border-white/10 bg-[#111815] p-4 sm:p-5
 const control = "rounded-lg border border-white/10 px-3 py-2 text-sm text-[#d4e4dc] hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#70d6b8] disabled:opacity-35";
 const field = "w-full min-w-0 rounded-lg border border-white/15 bg-[#0a0e0d] px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#70d6b8]";
 
-export function PublicOpeningEditor({ repertoires, update }: { repertoires?: PublicRepertoire[]; update: Update }) {
+export function PublicOpeningEditor({ repertoires, reviews, update }: { repertoires?: PublicRepertoire[]; reviews?: OpeningReview[]; update: Update }) {
   const [selectedId, setSelectedId] = useState<string>();
   const [showLibrary, setShowLibrary] = useState(true);
   const [library, setLibrary] = useState<OpeningLibrary>();
   const [loadFailed, setLoadFailed] = useState(false);
   const [importError, setImportError] = useState("");
   const [practiceId, setPracticeId] = useState<string>();
+  const [reviewQueue, setReviewQueue] = useState<OpeningReview[]>();
+  const [reviewClock, setReviewClock] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setReviewClock(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const dueCount = useMemo(() => dueOpeningReviews(repertoires ?? [], reviews ?? [], reviewClock).length, [repertoires, reviews, reviewClock]);
   const [name, setName] = useState("");
   const [color, setColor] = useState<PublicRepertoire["color"]>("white");
   const selected = repertoires?.find((item) => item.id === selectedId) ?? repertoires?.[0];
@@ -77,24 +86,45 @@ export function PublicOpeningEditor({ repertoires, update }: { repertoires?: Pub
     }
   }
 
+  function saveReview(outcome: OpeningReviewOutcome) {
+    return update((previous) => ({
+      ...previous, openingReviews: recordOpeningReview(previous.openingReviews, outcome),
+    }));
+  }
+
   const practice = repertoires?.find((item) => item.id === practiceId && item.moves.length > 0);
+  function startReview() {
+    const now = Date.now();
+    setReviewClock(now);
+    const queue = dueOpeningReviews(repertoires ?? [], reviews ?? [], now);
+    if (queue.length) setReviewQueue(queue);
+  }
+
   return <>
-    {practice && <PublicOpeningPractice key={practice.id} repertoire={practice} onExit={() => setPracticeId(undefined)} />}
-    {!practice && <div className="mb-3 flex flex-wrap gap-2" aria-label="Opening Academy views">
+    {reviewQueue && <PublicOpeningReviewSession queue={reviewQueue} repertoires={repertoires ?? []} reviews={reviews ?? []}
+      update={update} onExit={() => { setReviewQueue(undefined); setReviewClock(Date.now()); }} />}
+    {practice && <PublicOpeningPractice key={practice.id} repertoire={practice} onReview={saveReview} onExit={() => setPracticeId(undefined)} />}
+    {!practice && !reviewQueue && <div className="mb-3 flex flex-wrap gap-2" aria-label="Opening Academy views">
       <button className={`${control} aria-pressed:bg-[#70d6b8]/10 aria-pressed:text-[#a8eed8]`} aria-pressed={!showLibrary} onClick={() => setShowLibrary(false)}>My Repertoire</button>
       <button className={`${control} aria-pressed:bg-[#70d6b8]/10 aria-pressed:text-[#a8eed8]`} aria-pressed={showLibrary} onClick={() => setShowLibrary(true)}>Explore Openings</button>
     </div>}
-    <section className={showLibrary && !practice ? "min-w-0 sm:rounded-2xl sm:border sm:border-white/10 sm:bg-[#111815] sm:p-5" : "hidden"}>
+    <section className={showLibrary && !practice && !reviewQueue ? "min-w-0 sm:rounded-2xl sm:border sm:border-white/10 sm:bg-[#111815] sm:p-5" : "hidden"}>
       <h2 className="font-semibold">Explore Openings</h2>
       <p className="mb-4 mt-1 text-sm text-[#a4b5ab]">Recorded lines from the Lichess Chess Openings catalog (CC0). The catalog covers named lines and may omit other theoretical moves.</p>
-      {library ? <PublicOpeningLibrary active={showLibrary && !practice} library={library} repertoires={repertoires} onImport={importOpening} /> :
+      {library ? <PublicOpeningLibrary active={showLibrary && !practice && !reviewQueue} library={library} repertoires={repertoires} onImport={importOpening} /> :
         loadFailed ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm"><p>Could not load the opening library.</p><button className={control} onClick={() => setLoadFailed(false)}>Retry</button></div> :
           <p role="status" className="text-sm text-[#a4b5ab]">Loading opening library…</p>}
       {importError && <p role="alert" className="mt-3 text-sm text-[#f5b0a5]">{importError}</p>}
     </section>
-    <div className={practice || showLibrary ? "hidden" : "grid items-start gap-4 xl:grid-cols-[245px_minmax(0,1fr)]"}>
+    <div className={practice || reviewQueue || showLibrary ? "hidden" : "grid items-start gap-4 xl:grid-cols-[245px_minmax(0,1fr)]"}>
     <aside className={card}>
       <h2 className="mb-3 flex items-center gap-2 font-semibold"><BookOpen size={17} className="text-[#70d6b8]" /> Repertoires</h2>
+      <div className="mb-4 space-y-2 border-b border-white/10 pb-3">
+        <button className={`${control} w-full bg-[#70d6b8]/10 text-[#a8eed8]`} disabled={!dueCount} onClick={startReview}>
+          Review Due ({dueCount})
+        </button>
+        {!dueCount && <p className="text-xs text-[#a4b5ab]">No opening decisions due. Use Practice to learn new positions.</p>}
+      </div>
       {(["white", "black"] as const).map((side) => <section key={side} className="mb-4">
         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-[#9dadA5]">{side}</h3>
         {repertoires?.filter((item) => item.color === side).map((item) => <div key={item.id} className="mb-1 flex gap-1">
@@ -114,7 +144,7 @@ export function PublicOpeningEditor({ repertoires, update }: { repertoires?: Pub
         <button className={`${control} flex w-full items-center justify-center gap-2 bg-[#70d6b8]/10 text-[#a8eed8]`} disabled={!repertoires || repertoires.length >= maxRepertoires || !name.trim()}><Plus size={16} /> Create repertoire</button>
       </form>
     </aside>
-    {selected ? <RepertoireBoard key={selected.id} repertoire={selected} update={update} library={library} /> :
+    {selected ? <RepertoireBoard key={selected.id} repertoire={selected} update={update} library={library} reviews={reviews} /> :
       <section className={`${card} py-12 text-center`}>
         <h2 className="font-semibold">{repertoires ? "Build your first repertoire" : "Loading your repertoire library"}</h2>
         {repertoires && <p className="mt-2 text-sm text-[#a4b5ab]">Choose a side and name your repertoire to start adding moves.</p>}
@@ -123,7 +153,7 @@ export function PublicOpeningEditor({ repertoires, update }: { repertoires?: Pub
   </>;
 }
 
-function RepertoireBoard({ repertoire, update, library }: { repertoire: PublicRepertoire; update: Update; library?: OpeningLibrary }) {
+function RepertoireBoard({ repertoire, update, library, reviews }: { repertoire: PublicRepertoire; update: Update; library?: OpeningLibrary; reviews?: OpeningReview[] }) {
   const [selectedId, setSelectedId] = useState(repertoireRoot);
   const [preferred, setPreferred] = useState<Map<string, string>>(() => new Map());
   const [black, setBlack] = useState(repertoire.color === "black");
@@ -204,6 +234,7 @@ function RepertoireBoard({ repertoire, update, library }: { repertoire: PublicRe
         <button className={`${control} text-[#f5b0a5]`} onClick={remove}>Delete</button>
       </div>
     </div>
+    <MasterySummary repertoire={repertoire} reviews={reviews ?? []} />
     {rename !== null && <form onSubmit={saveName} className="mb-4 flex flex-wrap gap-2">
       <input aria-label="Rename repertoire" className={`${field} flex-1 basis-40`} value={rename} onChange={(event) => setRename(event.target.value)} maxLength={100} required />
       <button className={control}>Save name</button>
@@ -233,5 +264,22 @@ function RepertoireBoard({ repertoire, update, library }: { repertoire: PublicRe
         </ol>
       </div>
     </div>
+  </section>;
+}
+
+function MasterySummary({ repertoire, reviews }: { repertoire: PublicRepertoire; reviews: OpeningReview[] }) {
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const counts = openingMastery(repertoire, reviews, clock);
+  return <section aria-label="Opening mastery" className="mb-4 rounded-xl border border-white/10 bg-[#0c1210] p-3">
+    <h3 className="text-sm font-semibold">Opening mastery</h3>
+    <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {([["New positions", counts.newPositions], ["Due for review", counts.due], ["Learning", counts.learning], ["Mastered", counts.mastered]] as const)
+        .map(([label, count]) => <div key={label}><dt className="text-xs text-[#a4b5ab]">{label}</dt><dd className="font-semibold tabular-nums text-[#a8eed8]">{count}</dd></div>)}
+    </dl>
+    <p className="mt-2 text-xs text-[#a4b5ab]">Mastered means four consecutive unaided recalls. Due positions can be Learning or Mastered.</p>
   </section>;
 }

@@ -47,7 +47,13 @@ export function PublicWorkspace({ section }: { section: "games" | "analysis" | "
       const backup = JSON.parse(text);
       if (!window.confirm("Replace the public workspace progress in this browser with this backup?")) return;
       await restoreBrowserReviews(backup.gameReview, () => {
-        if (backup.repertoires === undefined) data.repertoires = readProgress(localStorage).repertoires;
+        if (backup.repertoires === undefined || backup.openingReviews === undefined) {
+          let current: PublicProgress | undefined;
+          try { current = readProgress(localStorage); }
+          catch { /* A valid backup can recover unreadable browser progress. */ }
+          if (current && backup.repertoires === undefined) data.repertoires = current.repertoires;
+          if (current && backup.openingReviews === undefined) data.openingReviews = current.openingReviews;
+        }
         setProgress(saveProgress(localStorage, data));
       });
       setRestoreVersion((version) => version + 1);
@@ -71,7 +77,7 @@ export function PublicWorkspace({ section }: { section: "games" | "analysis" | "
   return <div className={gamesWorkspace ? "knightforge-public-games" : "space-y-6"}>
     <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
     {section === "tactics" ? <Tactics progress={progress} update={update} /> :
-      section === "openings" ? <PublicOpeningEditor key={restoreVersion} repertoires={progress?.repertoires} update={update} /> :
+      section === "openings" ? <PublicOpeningEditor key={restoreVersion} repertoires={progress?.repertoires} reviews={progress?.openingReviews} update={update} /> :
       <PgnWorkspace key={section} training={false} lichessImport={section === "games"} progress={progress} update={update} restoreVersion={restoreVersion} />}
     <details className={`${panel} ${gamesWorkspace ? "knightforge-backup-panel" : ""}`}>
       <summary className="cursor-pointer font-semibold">Backup &amp; restore</summary>

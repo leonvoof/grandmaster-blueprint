@@ -4,6 +4,8 @@ import { puzzleDifficultyOptions, puzzleThemeOptions, type PuzzleDifficulty, typ
 
 import { decodeRepertoires, type PublicRepertoire } from "./public-repertoire.ts";
 
+import { decodeOpeningReviews, type OpeningReview } from "./public-opening-reviews.ts";
+
 export const progressKey = "knightforge:public-progress:v1";
 export const maxBackupBytes = 4_000_000;
 export const maxPgnLength = 16_000;
@@ -17,9 +19,9 @@ export type TacticsAttempt = {
   solved: boolean; incorrectMove: boolean; skipped: boolean; rating: number | null;
 };
 export type TacticsTotals = { attempted: number; solved: number; cleanSolved: number; currentCleanStreak: number; bestCleanStreak: number };
-export type PublicProgress = { version: 1; games: PublicGame[]; solves: Record<string, number>; recalls: number; tacticsAttempts: TacticsAttempt[]; tacticsTotals: TacticsTotals; repertoires: PublicRepertoire[] };
+export type PublicProgress = { version: 1; games: PublicGame[]; solves: Record<string, number>; recalls: number; tacticsAttempts: TacticsAttempt[]; tacticsTotals: TacticsTotals; repertoires: PublicRepertoire[]; openingReviews: OpeningReview[] };
 const emptyTacticsTotals = (): TacticsTotals => ({ attempted: 0, solved: 0, cleanSolved: 0, currentCleanStreak: 0, bestCleanStreak: 0 });
-const empty = (): PublicProgress => ({ version: 1, games: [], solves: {}, recalls: 0, tacticsAttempts: [], tacticsTotals: emptyTacticsTotals(), repertoires: [] });
+const empty = (): PublicProgress => ({ version: 1, games: [], solves: {}, recalls: 0, tacticsAttempts: [], tacticsTotals: emptyTacticsTotals(), repertoires: [], openingReviews: [] });
 const count = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 1_000_000;
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const difficulties = new Set<string>(puzzleDifficultyOptions.map(({ value }) => value));
@@ -82,7 +84,9 @@ export function decodeProgress(json: string): PublicProgress {
       currentCleanStreak: totals.currentCleanStreak, bestCleanStreak: totals.bestCleanStreak };
     if (new Set(tacticsAttempts.map(({ id }) => id)).size !== tacticsAttempts.length) throw new Error("Duplicate Tactics attempt.");
   }
-  return { version: 1, games, solves, recalls: value.recalls, tacticsAttempts, tacticsTotals, repertoires: decodeRepertoires(value.repertoires) };
+  const repertoires = decodeRepertoires(value.repertoires);
+  return { version: 1, games, solves, recalls: value.recalls, tacticsAttempts, tacticsTotals, repertoires,
+    openingReviews: decodeOpeningReviews(value.openingReviews, repertoires) };
 }
 
 type StorageAccess = Pick<Storage, "getItem" | "setItem">;
