@@ -1,19 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   beginMastersAuthorization, exchangeMastersCode, mastersCallback, mastersCallbackFields, mastersTokenExpired,
   mastersTransactionKey, MastersAuthorizationExpired, probeMasters, revokeMastersToken, type MastersConnection,
 } from "@/lib/public-lichess-masters-auth";
 
+import { createMastersStatsLoader, type MastersStatsLoader } from "@/lib/public-masters-stats";
+
+const MastersStatsContext = createContext<{ loader: MastersStatsLoader | null; onExpired: () => void }>({ loader: null, onExpired: () => {} });
+export const useMastersStatsConnection = () => useContext(MastersStatsContext);
+
 const button = "rounded-lg border border-[#70d6b8]/25 px-3 py-1.5 text-xs text-[#a8eed8] hover:bg-[#70d6b8]/10 focus-visible:outline-2 focus-visible:outline-[#70d6b8] disabled:opacity-50";
 const messageFor = (error: unknown) => error instanceof Error ? error.message : "The Lichess connection could not be completed.";
 
-export function PublicMastersConnection() {
+export function PublicMastersConnection({ children }: { children: ReactNode }) {
   const [connection, setConnection] = useState<MastersConnection | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [verified, setVerified] = useState(false);
+  const loader = useMemo(() => !busy && connection ? createMastersStatsLoader(connection) : null, [busy, connection]);
+  const statsConnection = useMemo(() => ({
+    loader,
+    onExpired: () => {
+      loader?.cancel();
+      setConnection(null);
+      setVerified(false);
+      setMessage("Lichess authorization expired or was rejected. Please connect again.");
+    },
+  }), [loader]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -51,16 +66,14 @@ export function PublicMastersConnection() {
     let timer: number;
     function schedule(active: MastersConnection) {
       if (mastersTokenExpired(active)) {
-        setConnection(null);
-        setVerified(false);
-        setMessage("Your Lichess connection expired. Connect again to restore access.");
+        statsConnection.onExpired();
       } else {
         timer = window.setTimeout(() => schedule(active), Math.min(active.expiresAt - Date.now(), 2_147_483_647));
       }
     }
     schedule(connection);
     return () => window.clearTimeout(timer);
-  }, [connection]);
+  }, [connection, statsConnection]);
 
   async function connect() {
     setBusy(true);
@@ -77,6 +90,7 @@ export function PublicMastersConnection() {
 
   async function disconnect() {
     if (!connection) return;
+    loader?.cancel();
     setConnection(null);
     setVerified(false);
     setBusy(true);
@@ -91,7 +105,7 @@ export function PublicMastersConnection() {
     }
   }
 
-  return <section aria-label="Lichess Masters connection" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0c1210] px-3 py-2">
+  return <MastersStatsContext.Provider value={statsConnection}><section aria-label="Lichess Masters connection" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0c1210] px-3 py-2">
     <div className="min-w-0">
       <h3 className="text-sm font-semibold">Lichess Masters</h3>
       <p role="status" className="mt-0.5 text-xs text-[#a4b5ab]">
@@ -100,5 +114,5 @@ export function PublicMastersConnection() {
     </div>
     {connection ? <button type="button" className={button} onClick={disconnect} disabled={busy}>Disconnect</button> :
       <button type="button" className={button} onClick={connect} disabled={busy}>Connect Lichess</button>}
-  </section>;
+  </section>{children}</MastersStatsContext.Provider>;
 }

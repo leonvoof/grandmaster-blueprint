@@ -92,11 +92,11 @@ test("Masters probe rejects HTTP 200 with invalid JSON schema, auth errors, rate
   });
   await assert.rejects(probeMasters(authorized, undefined, async () => Response.json({ ok: true })), /unexpected data/);
   await assert.rejects(probeMasters(authorized, undefined, async () => new Response(null, { status: 401 })), MastersAuthorizationExpired);
-  await assert.rejects(probeMasters(authorized, undefined, async () => new Response(null, { status: 429 })), /limiting requests/);
   await assert.rejects(probeMasters(authorized, undefined, async () => { throw Error("connection reset"); }), /Could not reach Lichess/);
   let contacted = false;
   await assert.rejects(probeMasters({ ...authorized, expiresAt: 1 }, undefined, async () => { contacted = true; }), MastersAuthorizationExpired);
   assert.equal(contacted, false);
+  await assert.rejects(probeMasters(authorized, undefined, async () => new Response(null, { status: 429 })), /limiting requests/);
 });
 
 test("disconnect revokes directly with Lichess and detects unsuccessful revocation", async () => {

@@ -112,10 +112,11 @@ export function PublicOpeningEditor({ repertoires, reviews, update }: { repertoi
     <section className={showLibrary && !practice && !reviewQueue ? "min-w-0 sm:rounded-2xl sm:border sm:border-white/10 sm:bg-[#111815] sm:p-5" : "hidden"}>
       <h2 className="font-semibold">Explore Openings</h2>
       <p className="mb-4 mt-1 text-sm text-[#a4b5ab]">Recorded lines from the Lichess Chess Openings catalog (CC0). The catalog covers named lines and may omit other theoretical moves.</p>
-      <PublicMastersConnection />
-      {library ? <PublicOpeningLibrary active={showLibrary && !practice && !reviewQueue} library={library} repertoires={repertoires} onImport={importOpening} /> :
-        loadFailed ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm"><p>Could not load the opening library.</p><button className={control} onClick={() => setLoadFailed(false)}>Retry</button></div> :
-          <p role="status" className="text-sm text-[#a4b5ab]">Loading opening library…</p>}
+      <PublicMastersConnection>
+        {library ? <PublicOpeningLibrary active={showLibrary && !practice && !reviewQueue} library={library} repertoires={repertoires} onImport={importOpening} /> :
+          loadFailed ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm"><p>Could not load the opening library.</p><button className={control} onClick={() => setLoadFailed(false)}>Retry</button></div> :
+            <p role="status" className="text-sm text-[#a4b5ab]">Loading opening library…</p>}
+      </PublicMastersConnection>
       {importError && <p role="alert" className="mt-3 text-sm text-[#f5b0a5]">{importError}</p>}
     </section>
     <div className={practice || reviewQueue || showLibrary ? "hidden" : "grid items-start gap-4 xl:grid-cols-[245px_minmax(0,1fr)]"}>

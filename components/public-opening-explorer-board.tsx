@@ -2,6 +2,7 @@
 
 import { Chess, type Square } from "chess.js";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PublicMastersStats } from "@/components/public-masters-stats";
 import { PublicBoard, type BoardMove } from "@/components/public-board";
 import { useOpeningExplorerAnalysis } from "@/components/use-opening-explorer-analysis";
 import { boardMoveAnnotation, boardSquareCell } from "@/lib/board-annotations";
@@ -134,6 +135,8 @@ export function OpeningExplorerBoard({ tree, preferred, played, title, recognize
           {assessment && !assessment.classification && <p className="text-[#a4b5ab]">{assessment.reason}</p>}
         </div>}
       </section>
+
+      <PublicMastersStats fen={current.fen} />
 
       <section className={explorerPanel}>
         <h3 className="text-sm font-semibold">Continuations</h3>

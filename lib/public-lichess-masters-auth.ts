@@ -126,15 +126,31 @@ export function validMastersProbe(value: unknown) {
   });
 }
 
-export async function probeMasters(connection: MastersConnection, signal?: AbortSignal, fetcher = fetch) {
-  if (mastersTokenExpired(connection)) throw new MastersAuthorizationExpired();
+let mastersCooldownUntil = 0;
+
+export async function requestMastersData(connection: MastersConnection, fen: string, moves: number, signal?: AbortSignal, fetcher = fetch, now = Date.now) {
+  if (mastersTokenExpired(connection, now())) throw new MastersAuthorizationExpired();
+  const limited = () => new Error("The Masters database is limiting requests. Wait at least a minute before trying again.");
+  if (now() < mastersCooldownUntil) throw limited();
   const url = new URL("https://explorer.lichess.org/masters");
-  url.search = new URLSearchParams({ fen: DEFAULT_POSITION, moves: "1", topGames: "0" }).toString();
+  url.search = new URLSearchParams({ fen, moves: String(moves), topGames: "0" }).toString();
   const response = await request(url, { headers: { Authorization: `Bearer ${connection.token}` } }, signal, fetcher);
   if (response.status === 401 || response.status === 403) throw new MastersAuthorizationExpired();
-  if (response.status === 429) throw new Error("The Masters database is limiting requests. Wait at least a minute before trying again.");
+  if (response.status === 429) {
+    const retryAfter = response.headers.get("Retry-After");
+    const time = now();
+    const delay = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter ?? "") - time;
+    mastersCooldownUntil = time + (Number.isFinite(delay) ? Math.max(60_000, delay) : 60_000);
+    throw limited();
+  }
   if (!response.ok) throw new Error("The Masters database is temporarily unavailable.");
-  if (!validMastersProbe(await readJson(response))) throw new Error("The Masters database returned unexpected data.");
+  return readJson(response);
+}
+
+export async function probeMasters(connection: MastersConnection, signal?: AbortSignal, fetcher = fetch) {
+  if (!validMastersProbe(await requestMastersData(connection, DEFAULT_POSITION, 1, signal, fetcher))) {
+    throw new Error("The Masters database returned unexpected data.");
+  }
 }
 
 export async function revokeMastersToken(connection: MastersConnection, signal?: AbortSignal, fetcher = fetch) {
